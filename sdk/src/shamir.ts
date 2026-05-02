@@ -310,5 +310,3 @@ export function decodeShareBase64(encoded: string): ShamirShare {
     data:  decoded.slice(1),
   };
 }
-```
-

@@ -254,7 +254,7 @@ export function useCovenants(
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const openCovenants = covenants.filter((c) => !c.account.isExecuted);
+  const openCovenants = covenants.filter((c: any) => !c.account.isExecuted);
 
   return { covenants, openCovenants, loading, error, refresh };
 }

@@ -240,7 +240,7 @@ export async function simulateTx(
   tx.feePayer        = feePayer;
   tx.add(...instructions);
 
-  const result = await connection.simulateTransaction(tx, { commitment: "confirmed" });
+  const result = await connection.simulateTransaction(tx);
   return { success: result.value.err === null, logs: result.value.logs ?? [] };
 }
 
