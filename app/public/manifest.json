@@ -1,0 +1,41 @@
+{
+  "name": "Legacy Protocol",
+  "short_name": "Legacy",
+  "description": "On-chain inheritance on Solana. Your assets, your rules.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0C0A09",
+  "theme_color": "#F59E0B",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ],
+  "categories": ["finance", "utilities"],
+  "shortcuts": [
+    {
+      "name": "My Vaults",
+      "short_name": "Vaults",
+      "description": "View all your inheritance vaults",
+      "url": "/vaults",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Claim Inheritance",
+      "short_name": "Claim",
+      "description": "Claim a triggered vault",
+      "url": "/claim",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

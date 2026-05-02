@@ -1,0 +1,24 @@
+
+[workspace]
+members = [
+    "programs/legacy_vault",
+    "crates/shamir",
+]
+resolver = "2"
+
+[workspace.dependencies]
+anchor-lang = { version = "0.30.1", features = ["init-if-needed"] }
+
+[profile.release]
+overflow-checks = true
+# Fat LTO merges all codegen units into one before optimisation, producing
+# maximum inlining depth and the smallest possible BPF binary. "thin" LTO
+# only performs partial cross-unit inlining and leaves more dead code in the
+# final object — the deployed program is larger and slower than it needs to be.
+lto = "fat"
+# A single codegen unit forces LLVM to see the entire crate at once, enabling
+# whole-program optimisation passes that cross module boundaries. Without this,
+# Rust partitions the crate into parallel units that are linked after
+# optimisation, missing cross-module inlining opportunities.
+codegen-units = 1
+
