@@ -79,7 +79,7 @@ import {
 } from "@legacy-protocol/sdk";
 import { PublicKey } from "@solana/web3.js";
 
-const PROGRAM_ID = new PublicKey("LGCYvau1tXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+const PROGRAM_ID = new PublicKey("7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe");
 
 // 1. Initialize vault
 const [vaultPda] = deriveVaultPda(PROGRAM_ID, owner.publicKey, 0n);

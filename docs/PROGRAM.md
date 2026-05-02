@@ -1,6 +1,6 @@
 # On-Chain Program Reference
 
-Program ID: `LGCYvau1tXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX` (replace with deployed address after `anchor deploy`)
+Program ID: `7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe` (replace with deployed address after `anchor deploy`)
 
 Framework: Anchor 0.30.1. Build flags: `overflow-checks = true`, `lto = "fat"`, `codegen-units = 1`.
 
