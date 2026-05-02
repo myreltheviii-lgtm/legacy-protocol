@@ -23,7 +23,8 @@ avm use 0.30.1
 
 ```bash
 cd legacy-protocol
-anchor build
+cargo update -p proc-macro2 --precise 1.0.95
+RUSTFLAGS="--cfg=procmacro2_semver_exempt" anchor build
 ```
 
 Build flags (from `Cargo.toml`): `overflow-checks = true`, `lto = "fat"`, `codegen-units = 1`.
@@ -35,11 +36,11 @@ The compiled program BPF binary is at `target/deploy/legacy_vault.so`. The IDL i
 ```bash
 # Devnet
 solana config set --url devnet
-anchor deploy --provider.cluster devnet
+RUSTFLAGS="--cfg=procmacro2_semver_exempt" anchor deploy --provider.cluster devnet
 
 # Mainnet
 solana config set --url mainnet-beta
-anchor deploy --provider.cluster mainnet-beta
+RUSTFLAGS="--cfg=procmacro2_semver_exempt" anchor deploy --provider.cluster mainnet-beta
 ```
 
 After deployment, the program ID is printed. Update `declare_id!(...)` in `programs/legacy_vault/src/lib.rs` and rebuild, then redeploy.
