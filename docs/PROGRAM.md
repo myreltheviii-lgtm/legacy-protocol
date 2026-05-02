@@ -1,6 +1,8 @@
 # On-Chain Program Reference
 
-Program ID: `7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe` (replace with deployed address after `anchor deploy`)
+Program ID: `7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe`
+
+[View on Solana Explorer (devnet)](https://explorer.solana.com/address/7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe?cluster=devnet)
 
 Framework: Anchor 0.30.1. Build flags: `overflow-checks = true`, `lto = "fat"`, `codegen-units = 1`.
 
