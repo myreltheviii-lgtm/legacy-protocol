@@ -4,6 +4,7 @@ Package: `@legacy-protocol/sdk`
 
 ```bash
 npm install @legacy-protocol/sdk
+npm install --save-dev @types/react
 ```
 
 ## Installation and Setup
