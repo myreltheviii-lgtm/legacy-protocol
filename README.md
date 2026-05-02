@@ -128,18 +128,18 @@ await sendAndConfirmLegacyTx(connection, walletAdapter, [checkInIx]);
 
 ## Documentation
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — System architecture with component diagrams
-- [PROGRAM.md](PROGRAM.md) — On-chain program reference: accounts, instructions, errors, events
-- [SDK.md](SDK.md) — TypeScript SDK integration guide
-- [WATCHER.md](WATCHER.md) — Watcher service reference
-- [RELAYER.md](RELAYER.md) — Relayer service reference
-- [MATH.md](MATH.md) — Mathematical reference with worked examples and test vectors
-- [SECURITY.md](SECURITY.md) — Security model, threat model, known limitations
-- [DEPLOYMENT.md](DEPLOYMENT.md) — Build, deploy, configure, monitor
-- [GUARDIAN_GUIDE.md](GUARDIAN_GUIDE.md) — Guide for guardians
-- [OWNER_GUIDE.md](OWNER_GUIDE.md) — Guide for vault owners
-- [BENEFICIARY_GUIDE.md](BENEFICIARY_GUIDE.md) — Guide for beneficiaries
-- [ERRORS.md](ERRORS.md) — All 30 error codes
-- [EVENTS.md](EVENTS.md) — All 17 events
-- [CHANGELOG.md](CHANGELOG.md) — Version history and decisions
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — System architecture with component diagrams
+- [PROGRAM.md](docs/PROGRAM.md) — On-chain program reference: accounts, instructions, errors, events
+- [SDK.md](docs/SDK.md) — TypeScript SDK integration guide
+- [WATCHER.md](docs/WATCHER.md) — Watcher service reference
+- [RELAYER.md](docs/RELAYER.md) — Relayer service reference
+- [MATH.md](docs/MATH.md) — Mathematical reference with worked examples and test vectors
+- [SECURITY.md](docs/SECURITY.md) — Security model, threat model, known limitations
+- [DEPLOYMENT.md](docs/DEPLOYMENT.md) — Build, deploy, configure, monitor
+- [GUARDIAN_GUIDE.md](docs/GUARDIAN_GUIDE.md) — Guide for guardians
+- [OWNER_GUIDE.md](docs/OWNER_GUIDE.md) — Guide for vault owners
+- [BENEFICIARY_GUIDE.md](docs/BENEFICIARY_GUIDE.md) — Guide for beneficiaries
+- [ERRORS.md](docs/ERRORS.md) — All 30 error codes
+- [EVENTS.md](docs/EVENTS.md) — All 17 events
+- [CHANGELOG.md](docs/CHANGELOG.md) — Version history and decisions
 
