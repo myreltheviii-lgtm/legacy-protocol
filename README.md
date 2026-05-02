@@ -47,7 +47,7 @@ sequenceDiagram
 
 | Layer | Component | What It Enforces |
 |-------|-----------|-----------------|
-| 1 — Program law | Anchor 0.30.1 on-chain program | Account ownership, threshold crossing, beneficiary identity, vault lifecycle transitions |
+| 1 — Program law | Anchor 0.31.1 on-chain program | Account ownership, threshold crossing, beneficiary identity, vault lifecycle transitions |
 | 2 — Guardian council | M-of-N GuardianAccount PDAs | Every sensitive change (emergency sweep, beneficiary change, guardian removal) requires M-of-N guardian signatures before execution |
 | 3 — Timelocks | CovenantAccount.timelock_slots | BeneficiaryChange requires 432,000 slots (~2 days) after M-of-N; GuardianRemoval via owner requires 216,000 slots (~30 hours); EmergencySweep is immediate |
 
@@ -119,7 +119,7 @@ await sendAndConfirmLegacyTx(connection, walletAdapter, [checkInIx]);
 
 | Component | Purpose | Location |
 |-----------|---------|----------|
-| `programs/legacy_vault` | Anchor 0.30.1 on-chain program, 15 instructions | Rust |
+| `programs/legacy_vault` | Anchor 0.31.1 on-chain program, 15 instructions | Rust |
 | `crates/shamir` | GF(256) Shamir Secret Sharing crate | Rust |
 | `watcher` | Geyser gRPC stream, poll pipeline, alert buses | TypeScript/Node.js |
 | `relayer` | trigger_inheritance transaction submission with retry | TypeScript/Node.js |

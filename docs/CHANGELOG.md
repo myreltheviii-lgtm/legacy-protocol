@@ -6,7 +6,7 @@ Status: Active development. Targeting Colosseum Frontier — May 11, 2026.
 
 ### Features Implemented
 
-**On-chain program** (Anchor 0.30.1):
+**On-chain program** (Anchor 0.31.1):
 - 15 instructions covering the complete vault lifecycle: initialize, configure, deposit, close, guardian management (add/remove with two-phase timelock), covenant system (create, sign, execute, emergency sweep), check-in, anomaly flag, trigger, claim, orphan recovery
 - 4 account types with precise fixed-size layouts: VaultAccount (128b), ActivityAccount (74b), GuardianAccount (90b), CovenantAccount (432b)
 - 30 error codes across 8 categories

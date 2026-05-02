@@ -20,7 +20,7 @@ Legacy Protocol is designed to protect against the following threats:
 
 ## Layer 1 — Program Law
 
-The on-chain Anchor 0.30.1 program is the sole authority over vault funds. All constraints are enforced at the BPF instruction execution level — no network, team, or external key can bypass them.
+The on-chain Anchor 0.31.1 program is the sole authority over vault funds. All constraints are enforced at the BPF instruction execution level — no network, team, or external key can bypass them.
 
 **What program law enforces**:
 - Only declared `owner` can check in, configure threshold, deposit, add/remove guardians, or close vault

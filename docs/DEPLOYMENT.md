@@ -10,11 +10,11 @@
 | Node.js | ≥ 20.0 | Watcher, relayer, SDK, frontend |
 | npm | ≥ 10 | Package management |
 
-Install Anchor 0.30.1:
+Install Anchor 0.31.1:
 ```bash
 cargo install --git https://github.com/coral-xyz/anchor avm --locked
-avm install 0.30.1
-avm use 0.30.1
+avm install 0.31.1
+avm use 0.31.1
 ```
 
 ## Program Deployment

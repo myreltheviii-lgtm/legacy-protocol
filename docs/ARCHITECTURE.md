@@ -5,7 +5,7 @@
 ```mermaid
 graph TB
     subgraph "On-Chain (Solana)"
-        P[legacy_vault program<br/>Anchor 0.30.1]
+        P[legacy_vault program<br/>Anchor 0.31.1]
         VA[VaultAccount PDAs]
         AA[ActivityAccount PDAs]
         GA[GuardianAccount PDAs]
