@@ -1,0 +1,38 @@
+# Rust / Cargo
+target/
+**/*.rs.bk
+
+# Anchor
+.anchor/
+target/deploy/*.json
+!target/deploy/legacy_vault-keypair.json
+
+# Node
+node_modules/
+dist/
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

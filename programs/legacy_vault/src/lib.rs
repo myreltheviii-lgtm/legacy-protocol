@@ -31,7 +31,7 @@ use instructions::*;
 use state::CovenantType;
 
 // Replace this with the output of `anchor build` on first compile.
-declare_id!("LGCYvau1tXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+declare_id!("7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe");
 
 #[program]
 pub mod legacy_vault {
