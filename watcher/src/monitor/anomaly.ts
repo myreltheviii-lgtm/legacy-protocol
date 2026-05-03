@@ -71,7 +71,7 @@ export interface AnomalyEvaluation {
  */
 export async function evaluateAllAnomalies(
   connection: Connection,
-  program: Program<LegacyVault>,
+  program: Program<any>,
   vaults: VaultRecord[],
   states: VaultInactivityState[],
 ): Promise<AnomalyEvaluation[]> {
@@ -114,7 +114,7 @@ export async function evaluateAllAnomalies(
  */
 async function evaluateSingleAnomaly(
   connection: Connection,
-  program: Program<LegacyVault>,
+  program: Program<any>,
   vault: VaultRecord,
   state: VaultInactivityState,
 ): Promise<AnomalyEvaluation> {
@@ -201,7 +201,7 @@ async function evaluateSingleAnomaly(
  */
 async function submitAnomalyFlag(
   connection: Connection,
-  program: Program<LegacyVault>,
+  program: Program<any>,
   vault: VaultRecord,
 ): Promise<void> {
   const signingPool = getSigningPool();
@@ -243,14 +243,10 @@ async function submitAnomalyFlag(
   const guardianProvider = new AnchorProvider(connection, guardianWallet, {
     commitment: "confirmed",
   });
-  const guardianProgram = new Program<LegacyVault>(
-    program.idl as Idl,
-    program.programId,
-    guardianProvider,
-  );
+  const guardianProgram = new Program<any>({ ...program.idl, address: program.programId.toBase58(), metadata: { name: "legacy_vault", version: "0.1.0", spec: "0.1.0" } } as any, guardianProvider) as Program<any>;
 
   // Build and send the transaction using the guardian-scoped program client.
-  const tx = await guardianProgram.methods
+  const tx = await (guardianProgram as any).methods
     .anomalyFlag()
     .accounts({
       guardian:        guardianPubkey,
@@ -265,5 +261,3 @@ async function submitAnomalyFlag(
     "anomaly_flag transaction confirmed",
   );
 }
-```
-

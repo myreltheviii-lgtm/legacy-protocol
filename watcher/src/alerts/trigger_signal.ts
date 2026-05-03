@@ -203,7 +203,7 @@ function signPayload(
 
 export async function signalEligibleTriggers(
   connection: Connection,
-  program: Program<LegacyVault>,
+  program: Program<any>,
   vaults: VaultRecord[],
   states: VaultInactivityState[],
 ): Promise<TriggerSignalResult[]> {

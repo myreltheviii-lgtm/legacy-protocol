@@ -102,7 +102,7 @@ let lastHeartbeatSlot:      bigint = 0n;
 let mostUrgentZone: ActivityZone = ActivityZone.Green;
 
 let connection:    Connection;
-let program:       Program<LegacyVault>;
+let program:       Program<any>;
 
 // ── Main entry point ──────────────────────────────────────────────────────────
 
@@ -134,11 +134,8 @@ async function main(): Promise<void> {
   const provider       = new AnchorProvider(connection, readOnlyWallet, {
     commitment: "confirmed",
   });
-  program = new Program<LegacyVault>(
-    IDL as Idl,
-    new PublicKey(config.programId),
-    provider,
-  ) as Program<LegacyVault>;
+  const idlWithAddress = { ...IDL, address: config.programId, metadata: { name: "legacy_vault", version: "0.1.0", spec: "0.1.0" } };
+  program = new Program<any>(idlWithAddress as any, provider) as Program<any>;
 
   logger.info(
     { programId: config.programId, rpc: config.rpcEndpoint },

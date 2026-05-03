@@ -76,7 +76,7 @@ export interface GuardianPingEvent {
  */
 export async function sendGuardianPingsForEligibleVaults(
   connection: Connection,
-  program: Program<LegacyVault>,
+  program: Program<any>,
   vaults: VaultRecord[],
   states: VaultInactivityState[],
 ): Promise<GuardianPingResult[]> {
@@ -117,7 +117,7 @@ export async function sendGuardianPingsForEligibleVaults(
 
 async function evaluateAndPing(
   connection: Connection,
-  program: Program<LegacyVault>,
+  program: Program<any>,
   vault: VaultRecord,
   state: VaultInactivityState,
 ): Promise<GuardianPingResult> {
@@ -214,14 +214,14 @@ async function evaluateAndPing(
  *   72:    is_active: bool (1 byte)
  */
 async function fetchGuardianAddresses(
-  program: Program<LegacyVault>,
+  program: Program<any>,
   vault: VaultRecord,
 ): Promise<string[]> {
   try {
     const vaultPubkey = new PublicKey(vault.vaultAddress);
 
     // Filter accounts by: program-owned + vault pubkey at offset 8.
-    const accounts = await program.account.guardianAccount.all([
+    const accounts = await ( program.account as any).guardianAccount.all([
       {
         memcmp: {
           offset: 8, // skip the 8-byte Anchor discriminator
@@ -231,8 +231,8 @@ async function fetchGuardianAddresses(
     ]);
 
     return accounts
-      .filter((a) => (a.account as any).isActive)
-      .map((a) => (a.account as any).guardian.toBase58());
+      .filter((a: any) => (a.account as any).isActive)
+      .map((a: any) => (a.account as any).guardian.toBase58());
   } catch (err) {
     logger.error(
       { vault: vault.vaultAddress, err },

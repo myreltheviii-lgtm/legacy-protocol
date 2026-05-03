@@ -146,7 +146,7 @@ export async function startGeyserClient(
 
     } finally {
       if (activeClient === client && client !== null) {
-        try { client.close(); } catch (_) {}
+        try { ( client as any).close(); } catch (_) {}
         activeClient = null;
       }
     }
@@ -158,7 +158,7 @@ export async function startGeyserClient(
 export function stopGeyserClient(): void {
   isGeyserRunning = false;
   if (activeClient !== null) {
-    try { activeClient.close(); } catch (_) {}
+    try { (activeClient as any).close(); } catch (_) {}
     activeClient = null;
   }
 }

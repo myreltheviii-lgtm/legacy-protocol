@@ -87,7 +87,7 @@ export interface BeneficiaryWarnEvent {
  */
 export async function sendBeneficiaryWarningsForEligibleVaults(
   connection: Connection,
-  program: Program<LegacyVault>,
+  program: Program<any>,
   vaults: VaultRecord[],
   states: VaultInactivityState[],
   blinkBaseUrl: string,
@@ -129,7 +129,7 @@ export async function sendBeneficiaryWarningsForEligibleVaults(
 
 async function evaluateAndWarn(
   connection: Connection,
-  program: Program<LegacyVault>,
+  program: Program<any>,
   vault: VaultRecord,
   state: VaultInactivityState,
   blinkBaseUrl: string,

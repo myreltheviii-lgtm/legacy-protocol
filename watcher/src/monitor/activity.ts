@@ -111,13 +111,13 @@ export function deriveActivityPda(
  */
 export async function fetchVaultAccount(
   connection: Connection,
-  program: Program<LegacyVault>,
+  program: Program<any>,
   vaultPubkey: PublicKey,
 ): Promise<OnChainVaultAccount | null> {
   // fetchNullable returns null when the account does not exist (discriminator
   // not found / zero lamports). It throws on RPC transport errors. We do not
   // catch here — let the caller decide how to handle failures.
-  const account = await program.account.vaultAccount.fetchNullable(vaultPubkey);
+  const account = await ( program.account as any).vaultAccount.fetchNullable(vaultPubkey);
   return account as OnChainVaultAccount | null;
 }
 
@@ -131,11 +131,11 @@ export async function fetchVaultAccount(
  */
 export async function fetchActivityAccount(
   connection: Connection,
-  program: Program<LegacyVault>,
+  program: Program<any>,
   vaultPubkey: PublicKey,
 ): Promise<OnChainActivityAccount | null> {
   const [activityPda] = deriveActivityPda(program.programId, vaultPubkey);
-  const account = await program.account.activityAccount.fetchNullable(activityPda);
+  const account = await ( program.account as any).activityAccount.fetchNullable(activityPda);
   return account as OnChainActivityAccount | null;
 }
 
@@ -155,7 +155,7 @@ export async function fetchActivityAccount(
  */
 export async function reconcileVault(
   connection: Connection,
-  program: Program<LegacyVault>,
+  program: Program<any>,
   localRecord: VaultRecord,
   currentSlot: bigint,
 ): Promise<VaultRecord | null> {
@@ -244,7 +244,7 @@ export async function reconcileVault(
  */
 export async function reconcileAllVaults(
   connection: Connection,
-  program: Program<LegacyVault>,
+  program: Program<any>,
   currentSlot: bigint,
   pollConcurrency: number,
 ): Promise<{ active: VaultRecord[]; deactivated: number }> {
