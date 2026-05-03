@@ -24,6 +24,8 @@ avm use 0.31.1
 ```bash
 cd legacy-protocol
 cargo update -p proc-macro2 --precise 1.0.95
+# Anchor 0.31.1 build — required flags for Rust 1.85+
+cargo update -p proc-macro2 --precise 1.0.95
 RUSTFLAGS="--cfg=procmacro2_semver_exempt" anchor build
 ```
 
@@ -60,6 +62,7 @@ anchor verify <program-id>
 ```bash
 cd watcher
 npm install
+# Note: Node v24 requires better-sqlite3@latest — upgrade automatically handled
 cp .env.example .env
 ```
 
@@ -103,6 +106,7 @@ Run the relayer in the same Node.js process as the watcher. No additional deploy
 ```bash
 cd relayer
 npm install
+# Note: Node v24 requires better-sqlite3@latest — upgrade automatically handled
 cp .env.example .env
 ```
 
@@ -134,6 +138,8 @@ NEXT_PUBLIC_SOLANA_CLUSTER=mainnet-beta  # omit for mainnet (no ?cluster= suffix
 ```bash
 cd app
 npm install
+# Note: tsconfig.json must exist with ES2020 target and @/* path alias before building
+# Note: Node v24 requires better-sqlite3@latest — upgrade automatically handled
 npm run build
 ```
 

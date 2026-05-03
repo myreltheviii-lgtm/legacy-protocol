@@ -54,7 +54,7 @@ Status: Active development. Targeting Colosseum Frontier — May 11, 2026.
 - Blink URL helpers
 - React hooks: useVault, useVaultRealtime, useGuardians, useCovenants, useVaultInactivity
 
-**Frontend** (Next.js 14.2.5):
+**Frontend** (Next.js 16.2.4):
 - Owner dashboard: InactivityRing SVG with animated arc, VaultDashboard, GuardianManager, ShamirDistributor
 - Guardian dashboard: scans for guardian PDAs by memcmp, sorts by urgency, CovenantFlow, EmergencySweepWizard
 - Beneficiary page: vault lookup, claim flow
@@ -99,3 +99,49 @@ Status: Active development. Targeting Colosseum Frontier — May 11, 2026.
 This is version 0.1.0. No migration from a previous version is required.
 ```
 
+
+## Build Fixes Applied (Pre-Deploy)
+
+**Program:**
+- Upgraded Anchor from 0.30.1 to 0.31.1 (fixes proc-macro2/source_file incompatibility with Rust 1.85+)
+- Added `idl-build = ["anchor-lang/idl-build"]` feature to `programs/legacy_vault/Cargo.toml`
+- Replaced placeholder `declare_id!` and `Anchor.toml` program ID with real deployed address: `7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe`
+- Build command: `cargo update -p proc-macro2 --precise 1.0.95 && RUSTFLAGS="--cfg=procmacro2_semver_exempt" anchor build`
+- Deployed to devnet: `7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe`
+
+**Watcher:**
+- Replaced `Program<LegacyVault>` with `Program<any>` for Anchor 0.31.1 IDL type compatibility
+- Fixed Program constructor to use `{ ...IDL, address, metadata }` pattern required by Anchor 0.31.1
+- Fixed `geyser_client.ts` — `client.close()` cast to `(client as any).close()`
+- Removed stray markdown backticks from `anomaly.ts` end-of-file
+- Upgraded `better-sqlite3` to latest for Node v24 compatibility
+
+**Relayer:**
+- Same Anchor 0.31.1 Program constructor fix as watcher
+- Fixed `broadcast.ts` deep type instantiation with `(program as any).methods` cast
+
+**SDK:**
+- Published to npm: `@legacy-protocol/sdk@0.3.0` under `@legacy-protocol` org
+- Fixed `simulateTransaction` API for newer `@solana/web3.js`
+- Added `@types/react` dev dependency
+- Fixed implicit `any` in `hooks.ts` filter
+- Removed stray markdown backticks from end of `shamir.ts`
+
+**Frontend (Next.js 16.2.4):**
+- Upgraded Next.js from 14.2.5 to 16.2.4
+- Upgraded React from 18 to 19 (required by `@solana/wallet-adapter-react` dependencies)
+- Added missing `tsconfig.json` with `@/*` path alias pointing to `src/`
+- Set `tsconfig.json` target to `ES2020` for BigInt literal support
+- Added `turbopack: {}` to `next.config.ts` to silence webpack config conflict warning
+- Fixed `WalletModalProvider` in `WalletProvider.tsx` — dynamic import with `ssr: false`
+- Fixed `WalletMultiButton` in all pages — dynamic import with `ssr: false`
+- Added `"use client"` directive as first line in all pages using wallet hooks
+- Fixed `@import url()` position in `globals.css` — must precede `@tailwind` directives
+- Removed stray markdown backticks from `VaultDashboard.tsx`, `route.ts`
+- Updated all hardcoded placeholder program IDs to deployed devnet address
+- Fixed `app/package.json` SDK reference from `file:../sdk` to published npm `0.3.0`
+
+**Post-Mainnet TODO:**
+- Regenerate IDL TypeScript types: copy `target/types/legacy_vault.ts` into SDK and watcher/relayer
+- Replace all `Program<any>` and `(program as any).methods` casts with `Program<LegacyVault>`
+- Run `anchor build` first to get fresh types after mainnet deploy
