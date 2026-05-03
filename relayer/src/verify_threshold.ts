@@ -70,7 +70,7 @@ export interface PreflightResult {
  */
 export async function verifyTriggerPreflight(
   connection: Connection,
-  program: Program<LegacyVault>,
+  program: Program<any>,
   vaultAddress: string,
   ownerAddress: string,
   vaultIndex: string,
@@ -88,7 +88,7 @@ export async function verifyTriggerPreflight(
   let vaultAccount: any;
   try {
     const vaultPubkey = new PublicKey(vaultAddress);
-    vaultAccount = await program.account.vaultAccount.fetchNullable(vaultPubkey);
+    vaultAccount = await (program.account as any).vaultAccount.fetchNullable(vaultPubkey);
   } catch (err) {
     logger.error({ err, vault: vaultAddress }, "Pre-flight: failed to fetch vault account");
     return { status: PreflightStatus.RpcError, currentSlot, error: err };

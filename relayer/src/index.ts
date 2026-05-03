@@ -54,7 +54,7 @@ const HEALTH_PORT       = parseInt(process.env.RELAYER_HEALTH_PORT ?? "3002", 10
 const jobs = new Map<string, TriggerJob>();
 
 let connection:     Connection;
-let program:        Program<LegacyVault>;
+let program:        Program<any>;
 let relayerKeypair: Keypair;
 let pollTimer:  ReturnType<typeof setInterval> | null = null;
 let isShuttingDown = false;
@@ -81,11 +81,10 @@ async function main(): Promise<void> {
     new Wallet(relayerKeypair),
     { commitment: "confirmed" },
   );
-  program = new Program<LegacyVault>(
-    IDL as Idl,
-    new PublicKey(PROGRAM_ID),
+  const idlWithAddress = { ...IDL, address: PROGRAM_ID, metadata: { name: "legacy_vault", version: "0.1.0", spec: "0.1.0" } };
+  program = new Program<any>(idlWithAddress as any,
     provider,
-  ) as Program<LegacyVault>;
+  ) as Program<any>;
 
   logger.info({ programId: PROGRAM_ID }, "Anchor program client ready");
 

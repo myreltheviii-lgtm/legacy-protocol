@@ -193,7 +193,7 @@ function verifyEventSignature(event: TriggerReadyEvent): boolean | null {
 
 export async function broadcastTrigger(
   connection:     Connection,
-  program:        Program<LegacyVault>,
+  program:        Program<any>,
   relayerKeypair: Keypair,
   event:          TriggerReadyEvent,
 ): Promise<BroadcastResult> {
@@ -321,11 +321,11 @@ export async function broadcastTrigger(
 
 async function submitTriggerTransaction(
   connection:     Connection,
-  program:        Program<LegacyVault>,
+  program:        Program<any>,
   relayerKeypair: Keypair,
   vaultPubkey:    PublicKey,
 ): Promise<TransactionSignature> {
-  const signature = await program.methods
+  const signature = await (program as any).methods
     .triggerInheritance()
     .accounts({
       caller: relayerKeypair.publicKey,
