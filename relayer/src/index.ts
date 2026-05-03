@@ -105,7 +105,7 @@ async function main(): Promise<void> {
 function startSameProcessMode(): void {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { triggerSignalBus } = require("../watcher/src/alerts/trigger_signal");
+    const { triggerSignalBus } = require("../watcher/dist/alerts/trigger_signal");
     triggerSignalBus.on("trigger_ready", (event: TriggerReadyEvent) => {
       handleTriggerSignal(event).catch((err) =>
         logger.error({ err, vault: event.vaultAddress }, "Unhandled error in trigger handler"),
