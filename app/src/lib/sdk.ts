@@ -10,7 +10,7 @@ import { Connection, PublicKey } from "@solana/web3.js";
 
 export const PROGRAM_ID = new PublicKey(
   process.env.NEXT_PUBLIC_LEGACY_VAULT_PROGRAM_ID ??
-  "LGCYvau1tXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe",
 );
 
 export const RPC_ENDPOINT =

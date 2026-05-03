@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
     "@solana/wallet-adapter-solflare",
     "@legacy-protocol/sdk",
   ],
+  turbopack: {},
   webpack: (config) => {
     // Required for @solana/web3.js and related packages that reference Node.js
     // built-ins in a browser context.

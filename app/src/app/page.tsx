@@ -1,6 +1,8 @@
+"use client";
 import React from "react";
 import Link from "next/link";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import dynamic from "next/dynamic";
+const WalletMultiButton = dynamic(() => import("@solana/wallet-adapter-react-ui").then(m => m.WalletMultiButton), { ssr: false });
 
 /**
  * Landing page. Explains the protocol and links to vault creation / search.

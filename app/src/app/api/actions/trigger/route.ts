@@ -18,7 +18,7 @@ import { computeInactivityScore } from "@legacy-protocol/sdk";
 
 const PROGRAM_ID_STR =
   process.env.NEXT_PUBLIC_LEGACY_VAULT_PROGRAM_ID ??
-  "LGCYvau1tXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+  "7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe";
 
 const PROGRAM_ID = new PublicKey(PROGRAM_ID_STR);
 

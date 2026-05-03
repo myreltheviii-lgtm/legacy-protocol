@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import dynamic from "next/dynamic";
+const WalletMultiButton = dynamic(() => import("@solana/wallet-adapter-react-ui").then(m => m.WalletMultiButton), { ssr: false });
 import { PublicKey } from "@solana/web3.js";
 import { fetchVault, computeVaultInactivityState, VaultAccount, ActivityZone } from "@legacy-protocol/sdk";
 import { PROGRAM_ID } from "@/lib/sdk";

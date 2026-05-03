@@ -500,5 +500,3 @@ function Stat({
     </div>
   );
 }
-```
-

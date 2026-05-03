@@ -1,3 +1,4 @@
+"use client";
 // app/src/app/vaults/page.tsx
 //
 // Multi-vault portfolio page. Shows all VaultAccounts owned by the connected
@@ -9,12 +10,12 @@
 // but filtered server-side, so response size is proportional only to the
 // number of vaults the owner controls.
 
-"use client";
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import dynamic from "next/dynamic";
+const WalletMultiButton = dynamic(() => import("@solana/wallet-adapter-react-ui").then(m => m.WalletMultiButton), { ssr: false });
 import {
   fetchAllVaultsForOwner,
   computeVaultInactivityState,
