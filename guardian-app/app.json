@@ -25,7 +25,8 @@
             "minSdkVersion": 29
           }
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "extra": {
       "eas": {
