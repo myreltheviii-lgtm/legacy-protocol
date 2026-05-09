@@ -40,7 +40,11 @@ const DISC_RECORD_CLOAK_CLAIM      = disc("record_cloak_claim");
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function writeU64LE(value: bigint, buf: Buffer, offset: number): void {
-  buf.writeBigUInt64LE(value, offset);
+  let v = value;
+  for (let i = 0; i < 8; i++) {
+    buf[offset + i] = Number(v & 0xffn);
+    v >>= 8n;
+  }
 }
 
 function writeU8(value: number, buf: Buffer, offset: number): void {
