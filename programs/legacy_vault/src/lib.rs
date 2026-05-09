@@ -29,7 +29,7 @@ pub mod state;
 use instructions::*;
 use state::CovenantType;
 
-declare_id!("4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd");
+declare_id!("CcnYCu1EEfKD9eBZndxPCorESfJatFdxP15EaAKksPEr");
 
 #[program]
 pub mod legacy_vault {

@@ -35,8 +35,8 @@ export async function generateBeneficiaryIdentity(): Promise<UtxoIdentity> {
   const keypair = await generateUtxoKeypair();
   // generateUtxoKeypair() returns Uint8Array(32) values directly per documented API.
   // Assign without any bigint conversion — the values are already the correct type.
-  const privateKey   = keypair.privateKey as Uint8Array;
-  const publicKey    = keypair.publicKey  as Uint8Array;
+  const privateKey   = bigintToBytes32(keypair.privateKey as unknown as bigint);
+  const publicKey    = bigintToBytes32(keypair.publicKey as unknown as bigint);
   // getNkFromUtxoPrivateKey(privateKey: Uint8Array) → Uint8Array per documented API.
   const viewingKeyNk = getNkFromUtxoPrivateKey(keypair.privateKey) as unknown as Uint8Array;
   return { privateKey, publicKey, viewingKeyNk };
@@ -204,6 +204,16 @@ function hexToBuf(hex: string): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(new ArrayBuffer(hex.length / 2));
   for (let i = 0; i < bytes.length; i++) {
     bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
+}
+
+function bigintToBytes32(value: bigint): Uint8Array {
+  const bytes = new Uint8Array(32);
+  let v = value;
+  for (let i = 31; i >= 0; i--) {
+    bytes[i] = Number(v & 0xffn);
+    v >>= 8n;
   }
   return bytes;
 }

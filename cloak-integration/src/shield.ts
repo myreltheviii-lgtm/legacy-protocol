@@ -69,10 +69,10 @@ export interface ShieldWalletAdapter {
 export async function createOwnerUtxoIdentity(): Promise<UtxoIdentity> {
   const keypair      = await generateUtxoKeypair();
   // generateUtxoKeypair() returns Uint8Array values directly — assign without conversion.
-  const privateKey   = keypair.privateKey as Uint8Array;
-  const publicKey    = keypair.publicKey  as Uint8Array;
+  const privateKey   = bigintToBytes32(keypair.privateKey as unknown as bigint);
+  const publicKey    = bigintToBytes32(keypair.publicKey as unknown as bigint);
   // getNkFromUtxoPrivateKey(privateKey: Uint8Array) → Uint8Array per documented API.
-  const viewingKeyNk = getNkFromUtxoPrivateKey(keypair.privateKey) as unknown as Uint8Array;
+  const viewingKeyNk = bigintToBytes32(getNkFromUtxoPrivateKey(bytesToBigint(privateKey)) as unknown as bigint);
   return { privateKey, publicKey, viewingKeyNk };
 }
 
@@ -121,7 +121,7 @@ export async function depositToShieldedVault(params: {
   // generateUtxoKeypair().
   const output    = await createUtxo(
     amountLamports,
-    { privateKey: ownerUtxo.privateKey, publicKey: ownerUtxo.publicKey },
+    { privateKey: bytesToBigint(ownerUtxo.privateKey), publicKey: bytesToBigint(ownerUtxo.publicKey) },
     NATIVE_SOL_MINT,
   );
 

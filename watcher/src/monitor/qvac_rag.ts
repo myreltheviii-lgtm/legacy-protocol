@@ -29,7 +29,7 @@
 //   querySimilarTriggered()    — query count of similar triggered vaults
 
 import Database                from "better-sqlite3";
-import { getEmbedder }         from "@qvac/embed-llamacpp";
+import GGMLBert from "@qvac/embed-llamacpp";
 import { VaultBehavior }       from "./qvac_anomaly";
 import { logger }              from "../logger";
 
@@ -51,7 +51,7 @@ export const TOP_K                = 5;
 // ── Module state ──────────────────────────────────────────────────────────────
 
 let _db:             Database.Database              | null = null;
-let _embedderHandle: ReturnType<typeof getEmbedder> | null = null;
+let _embedderHandle: GGMLBert | null = null;
 
 // Prepared statements — initialised once and reused for performance.
 let _stmtUpsert:             Database.Statement | null = null;
@@ -107,8 +107,8 @@ export async function initQVACRagStore(dbPath: string): Promise<void> {
     WHERE  vault_address = ?
   `);
 
-  _embedderHandle = getEmbedder();
-  await _embedderHandle.loadModel(EMBEDDER_MODEL, { modelConfig: EMBEDDER_MODEL_CONFIG });
+  _embedderHandle = new GGMLBert({ files: { model: [EMBEDDER_MODEL] }, config: EMBEDDER_MODEL_CONFIG });
+  await _embedderHandle.load();
 
   logger.info("QVAC RAG: store ready — embedder model loaded");
 }
@@ -121,7 +121,7 @@ export async function initQVACRagStore(dbPath: string): Promise<void> {
 export async function closeQVACRagStore(): Promise<void> {
   if (_embedderHandle) {
     try {
-      await _embedderHandle.unloadModel();
+      await _embedderHandle.unload();
       logger.info("QVAC RAG: embedder model unloaded cleanly");
     } catch (err) {
       logger.error({ err }, "QVAC RAG: error unloading embedder — continuing shutdown");
@@ -175,8 +175,9 @@ export async function ingestVaultBehavior(
   const behaviorText = buildBehaviorText(behavior);
 
   try {
-    // embed() returns Promise<{ embedding: number[] }>
-    const { embedding } = await _embedderHandle.embed(behaviorText);
+    const embedRes = await _embedderHandle.run(behaviorText);
+    const embedOut = await embedRes.await() as any;
+    const embedding: number[] = Array.isArray(embedOut) ? embedOut[0]?.embedding ?? embedOut[0] : embedOut?.embedding ?? embedOut;
 
     const embeddingBlob = float32ArrayToBuffer(new Float32Array(embedding));
 
@@ -253,7 +254,9 @@ export async function querySimilarTriggered(
   const behaviorText = behaviorRow.behavior_text;
 
   try {
-    const { embedding: queryEmbedding } = await _embedderHandle.embed(behaviorText);
+    const queryRes = await _embedderHandle.run(behaviorText);
+    const queryOut = await queryRes.await() as any;
+    const queryEmbedding: number[] = Array.isArray(queryOut) ? queryOut[0]?.embedding ?? queryOut[0] : queryOut?.embedding ?? queryOut;
     const queryVec = new Float32Array(queryEmbedding);
 
     type RagRow = { vault_address: string; triggered: number; embedding_blob: Buffer };

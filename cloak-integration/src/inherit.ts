@@ -100,7 +100,7 @@ export async function scanOwnerUtxos(params: {
     // Derive the viewing key — the read-only capability for scanning.
     // getNkFromUtxoPrivateKey(privateKey: Uint8Array) → Uint8Array per documented API.
     // The Uint8Array private key is passed directly without any bigint conversion.
-    const viewingKeyNk = getNkFromUtxoPrivateKey(ownerPrivateKey) as unknown as Uint8Array;
+    const viewingKeyNk = bigintToBytes32(getNkFromUtxoPrivateKey(bytesToBigint(ownerPrivateKey)) as unknown as bigint);
 
     const scan = await scanTransactions({
       connection,
@@ -267,4 +267,15 @@ export function estimateInheritanceTransfer(grossLamports: bigint): {
   const fee = BigInt(Math.round(calculateFee(Number(grossLamports))));
   const net = grossLamports > fee ? grossLamports - fee : 0n;
   return { gross: grossLamports, fee, net };
+}
+
+
+function bigintToBytes32(value: bigint): Uint8Array {
+  const bytes = new Uint8Array(32);
+  let v = value;
+  for (let i = 31; i >= 0; i--) {
+    bytes[i] = Number(v & 0xffn);
+    v >>= 8n;
+  }
+  return bytes;
 }

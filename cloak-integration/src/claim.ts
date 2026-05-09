@@ -115,7 +115,7 @@ export async function claimInheritanceToWallet(params: {
     // The Uint8Array private key is passed directly without bigint conversion.
     // This call is now inside the outer try/finally so any exception it throws
     // still results in the private key being zeroed.
-    const viewingKeyNk = getNkFromUtxoPrivateKey(beneficiaryUtxoPrivateKey) as unknown as Uint8Array;
+    const viewingKeyNk = bigintToBytes32(getNkFromUtxoPrivateKey(bytesToBigint(beneficiaryUtxoPrivateKey)) as unknown as bigint);
 
     // Scan the Cloak program's transaction history for UTXOs decryptable by
     // this viewing key. limit:250 covers most vaults; increase if needed.
@@ -208,7 +208,7 @@ export async function generateComplianceProof(params: {
     // This is now inside the outer try/finally so any failure still zeroes the key.
     // getNkFromUtxoPrivateKey(privateKey: Uint8Array) → Uint8Array per documented API.
     // The Uint8Array private key is passed directly without bigint conversion.
-    const viewingKeyNk = getNkFromUtxoPrivateKey(beneficiaryUtxoPrivateKey) as unknown as Uint8Array;
+    const viewingKeyNk = bigintToBytes32(getNkFromUtxoPrivateKey(bytesToBigint(beneficiaryUtxoPrivateKey)) as unknown as bigint);
 
     const scan = await scanTransactions({
       connection,
@@ -230,4 +230,20 @@ export async function generateComplianceProof(params: {
   }
 
   return { summary, transactions, generatedAt };
+}
+
+function bytesToBigint(arr: Uint8Array): bigint {
+  let result = 0n;
+  for (const byte of arr) { result = (result << 8n) | BigInt(byte); }
+  return result;
+}
+
+function bigintToBytes32(value: bigint): Uint8Array {
+  const bytes = new Uint8Array(32);
+  let v = value;
+  for (let i = 31; i >= 0; i--) {
+    bytes[i] = Number(v & 0xffn);
+    v >>= 8n;
+  }
+  return bytes;
 }

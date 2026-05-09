@@ -26,8 +26,8 @@
 //   shutdownQVACAnomalyEngine() — unload LLM model, must run before closeQVACRagStore
 //   analyzeVaultAnomaly()       — run LLM risk analysis, return QVACAnomalyResult
 
-import { getLlm, VERBOSITY } from "@qvac/llm-llamacpp";
-import { getEmbedder }       from "@qvac/embed-llamacpp";
+import LlmLlamacpp from "@qvac/llm-llamacpp";
+import GGMLBert from "@qvac/embed-llamacpp";
 import { SLOTS_PER_DAY, VaultInactivityState } from "./block_counter";
 import { VaultRecord }       from "../types/watcher";
 import { logger }            from "../logger";
@@ -41,13 +41,13 @@ const EMBEDDER_MODEL = "GTE_LARGE_FP16";
 const LLM_MODEL_CONFIG = {
   device:    "cpu" as const,
   ctx_size:  2048,
-  verbosity: VERBOSITY.ERROR,
+  verbosity: 0,
 };
 
 // gpuLayers: 0 and device: "cpu" for embedder — GPU forbidden throughout.
 const EMBEDDER_MODEL_CONFIG = {
-  gpuLayers: 0,
-  device:    "cpu" as const,
+  device: "cpu" as const,
+  gpu_layers: "0" as const,
 };
 
 // ── QVAC Types ────────────────────────────────────────────────────────────────
@@ -94,11 +94,11 @@ export interface QVACAnomalyResult {
 
 // Persistent LLM handle held for the lifetime of the watcher process.
 // Initialised by initQVACAnomalyEngine(), released by shutdownQVACAnomalyEngine().
-let _llmHandle: ReturnType<typeof getLlm> | null = null;
+let _llmHandle: LlmLlamacpp | null = null;
 
 // Embedder handle used only during prewarmQVACModels() to pre-cache the model.
 // The RAG store manages its own embedder handle via qvac_rag.ts.
-let _prewarmEmbedderHandle: ReturnType<typeof getEmbedder> | null = null;
+let _prewarmEmbedderHandle: GGMLBert | null = null;
 
 // ── Prewarm ───────────────────────────────────────────────────────────────────
 
@@ -116,15 +116,12 @@ let _prewarmEmbedderHandle: ReturnType<typeof getEmbedder> | null = null;
 export async function prewarmQVACModels(): Promise<void> {
   logger.info("QVAC: prewarming LLM and embedder models — downloading to local cache");
 
-  const llm      = getLlm();
-  const embedder = getEmbedder();
-
-  await llm.downloadModel(LLM_MODEL);
-  await llm.loadModel(LLM_MODEL, { modelConfig: LLM_MODEL_CONFIG });
-  await llm.unloadModel();
-
-  await embedder.loadModel(EMBEDDER_MODEL, { modelConfig: EMBEDDER_MODEL_CONFIG });
-  await embedder.unloadModel();
+  const llm      = new LlmLlamacpp({ files: { model: [LLM_MODEL] }, config: LLM_MODEL_CONFIG });
+  const embedder = new GGMLBert({ files: { model: [EMBEDDER_MODEL] }, config: EMBEDDER_MODEL_CONFIG });
+  await llm.load();
+  await llm.unload();
+  await embedder.load();
+  await embedder.unload();
 
   logger.info("QVAC: prewarm complete — both models cached locally");
 }
@@ -139,9 +136,8 @@ export async function prewarmQVACModels(): Promise<void> {
  */
 export async function initQVACAnomalyEngine(): Promise<void> {
   logger.info("QVAC: initialising anomaly LLM engine");
-  _llmHandle = getLlm();
-  await _llmHandle.downloadModel(LLM_MODEL);
-  await _llmHandle.loadModel(LLM_MODEL, { modelConfig: LLM_MODEL_CONFIG });
+  _llmHandle = new LlmLlamacpp({ files: { model: [LLM_MODEL] }, config: LLM_MODEL_CONFIG });
+  await _llmHandle.load();
   logger.info("QVAC: anomaly LLM engine ready — model loaded");
 }
 
@@ -153,7 +149,7 @@ export async function initQVACAnomalyEngine(): Promise<void> {
 export async function shutdownQVACAnomalyEngine(): Promise<void> {
   if (!_llmHandle) return;
   try {
-    await _llmHandle.unloadModel();
+    await _llmHandle.unload();
     logger.info("QVAC: anomaly LLM engine unloaded cleanly");
   } catch (err) {
     logger.error({ err }, "QVAC: error unloading anomaly LLM engine — continuing shutdown");
@@ -253,15 +249,12 @@ export async function analyzeVaultAnomaly(
   const prompt = buildAnomalyPrompt(behavior);
 
   try {
-    // completion() returns synchronously — it is NOT a Promise.
-    // Only result.text is awaited. Never await completion() itself.
-    const result = _llmHandle.completion({
-      prompt,
-      modelConfig:      LLM_MODEL_CONFIG,
-      completionConfig: { max_tokens: 256, temperature: 0.1 },
-    });
-
-    const raw = await result.text;
+    const llmRes = await _llmHandle.run(
+      [{ role: "user", content: prompt }],
+      { generationParams: { predict: 256, temp: 0.1 } },
+    );
+    const llmOut = await llmRes.await() as any;
+    const raw = typeof llmOut === "string" ? llmOut : (Array.isArray(llmOut) ? String(llmOut[llmOut.length - 1]) : String(llmOut));
 
     const parsed = parseQVACResponse(raw, fallback);
 
