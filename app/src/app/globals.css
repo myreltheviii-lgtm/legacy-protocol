@@ -1,0 +1,286 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── CSS custom properties ──────────────────────────────────────────────────── */
+/*                                                                               */
+/* Font-family CSS variables (--font-display, --font-mono, --font-body) are     */
+/* injected by next/font via the className applied to <html> in layout.tsx.     */
+/* They do NOT need to be declared here — next/font sets them on the root       */
+/* element and all descendants resolve them correctly via CSS inheritance.      */
+/*                                                                               */
+:root {
+  /* Zone colours — match SDK ActivityZone enum */
+  --zone-green:  #10B981;
+  --zone-yellow: #EAB308;
+  --zone-orange: #F97316;
+  --zone-red:    #EF4444;
+
+  /* Structural colours */
+  --bg-base:        #0C0A09;
+  --bg-elevated:    #1C1917;
+  --bg-card:        #1C1917;
+  --border:         #292524;
+  --border-visible: #57534E; /* higher-contrast border for interactive elements */
+  --border-dim:     #1C1917;
+  --text-primary:   #FAFAF9;
+  --text-secondary: #A8A29E;
+  --text-muted:     #57534E;
+  --accent:         #F59E0B;
+  --accent-dim:     #92400E;
+}
+
+/* ── Base resets ────────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
+  min-height: 100dvh;
+  /* Safe area insets for notched phones — viewport-fit=cover is set in layout.tsx.
+     This prevents the status bar and home indicator from overlapping content. */
+  padding-top:    env(safe-area-inset-top,    0px);
+  padding-left:   env(safe-area-inset-left,   0px);
+  padding-right:  env(safe-area-inset-right,  0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ── Typography ─────────────────────────────────────────────────────────────── */
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+code, pre, .mono {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+
+/* ── Focus rings — WCAG 2.1 AA visible focus ────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: #44403C; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #57534E; }
+
+/* ── Wallet adapter UI overrides ─────────────────────────────────────────────── */
+.wallet-adapter-button {
+  background: var(--accent) !important;
+  color: #0C0A09 !important;
+  font-family: var(--font-body) !important;
+  font-weight: 500 !important;
+  border-radius: 6px !important;
+  height: 40px !important;
+  padding: 0 16px !important;
+  font-size: 14px !important;
+  transition: opacity 0.15s !important;
+}
+.wallet-adapter-button:hover {
+  opacity: 0.85 !important;
+}
+.wallet-adapter-modal-wrapper {
+  background: var(--bg-elevated) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px !important;
+}
+.wallet-adapter-modal-title {
+  color: var(--text-primary) !important;
+  font-family: var(--font-display) !important;
+}
+.wallet-adapter-modal-list li button {
+  color: var(--text-primary) !important;
+  background: var(--bg-base) !important;
+  border-radius: 8px !important;
+}
+.wallet-adapter-modal-list li button:hover {
+  background: var(--border) !important;
+}
+
+/* ── Utility classes ─────────────────────────────────────────────────────────── */
+.card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 24px;
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.address {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #0C0A09;
+  font-weight: 500;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  /* Prevent long button labels from wrapping to multiple lines */
+  white-space: nowrap;
+}
+.btn-primary:hover { opacity: 0.88; }
+.btn-primary:active { transform: scale(0.98); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text-primary);
+  font-weight: 400;
+  /* Use --border-visible (#57534E) instead of --border (#292524).
+     #292524 on the #1C1917 card background has near-zero contrast — the button
+     border was effectively invisible. #57534E provides clear legibility. */
+  border: 1px solid var(--border-visible);
+  border-radius: 6px;
+  padding: 9px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.btn-secondary:hover {
+  border-color: var(--text-secondary);
+  background: rgba(255,255,255,0.03);
+}
+.btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-danger {
+  background: transparent;
+  color: var(--zone-red);
+  border: 1px solid var(--zone-red);
+  border-radius: 6px;
+  padding: 9px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.btn-danger:hover { background: rgba(239,68,68,0.1); }
+.btn-danger:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.input {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 14px;
+  width: 100%;
+  font-family: var(--font-body);
+  transition: border-color 0.15s;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.input::placeholder { color: var(--text-muted); }
+
+.zone-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Skeleton animation ───────────────────────────────────────────────────────── */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: .6; }
+  50%       { opacity: .3; }
+}
+
+.skeleton-pulse {
+  animation: skeletonPulse 1.6s ease-in-out infinite;
+}
+
+/* ── Mobile optimizations ────────────────────────────────────────────────────── */
+
+/* WCAG touch targets: all buttons must be at least 44×44px tall */
+button,
+.btn-primary,
+.btn-secondary,
+.btn-danger {
+  min-height: 44px;
+}
+
+/* Prevent iOS zoom-on-focus for text inputs on mobile */
+@media (max-width: 640px) {
+  .input {
+    font-size: 16px;
+  }
+}
+
+/* Modal content: allow scrolling on short viewports */
+[role="dialog"] {
+  max-height: 90dvh;
+  overflow-y: auto;
+}
+
+/* Nav: horizontal scroll on small screens, no wrapping */
+nav > div {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Scroll-reveal animation ─────────────────────────────────────────────────── */
+/* Used by the useScrollReveal hook in page.tsx to animate major content        */
+/* sections as they enter the viewport.                                          */
+@keyframes scrollRevealIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.scroll-reveal {
+  opacity: 0;
+}
+
+.scroll-reveal.scroll-reveal-visible {
+  animation: scrollRevealIn 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}

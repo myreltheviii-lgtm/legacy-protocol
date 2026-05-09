@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Guardian",
+    "slug": "legacy-guardian",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#1a1512"
+    },
+    "android": {
+      "package": "com.legacyprotocol.guardian",
+      "minSdkVersion": 29,
+      "adaptiveIcon": {
+        "backgroundColor": "#1a1512"
+      }
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 29
+          }
+        }
+      ]
+    ]
+  }
+}

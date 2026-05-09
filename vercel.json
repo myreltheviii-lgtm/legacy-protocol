@@ -1,0 +1,8 @@
+{
+  "framework": "nextjs",
+  "env": {
+    "NEXT_PUBLIC_SOLANA_RPC_ENDPOINT": "https://your-helius-or-quicknode-endpoint-here",
+    "NEXT_PUBLIC_LEGACY_VAULT_PROGRAM_ID": "4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd",
+    "NEXT_PUBLIC_SOLANA_CLUSTER": "mainnet-beta"
+  }
+}

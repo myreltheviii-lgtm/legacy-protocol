@@ -1,0 +1,3010 @@
+{
+  "address": "4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd",
+  "metadata": {
+    "name": "legacy_vault",
+    "version": "0.1.0",
+    "spec": "0.1.0"
+  },
+  "instructions": [
+    {
+      "name": "add_guardian",
+      "docs": [
+        "Registers a new guardian and updates the M-of-N threshold."
+      ],
+      "discriminator": [
+        167,
+        189,
+        170,
+        27,
+        74,
+        240,
+        201,
+        241
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian"
+        },
+        {
+          "name": "guardian_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "guardian"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "m_of_n_threshold",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "anomaly_flag",
+      "docs": [
+        "Any active guardian may call this when the owner's silence exceeds the",
+        "statistically expected interval."
+      ],
+      "discriminator": [
+        0,
+        143,
+        118,
+        13,
+        37,
+        147,
+        193,
+        101
+      ],
+      "accounts": [
+        {
+          "name": "guardian",
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.owner",
+                "account": "VaultAccount"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "guardian"
+              }
+            ]
+          }
+        },
+        {
+          "name": "activity",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  116,
+                  105,
+                  118,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "check_in",
+      "docs": [
+        "Owner proves they are alive. Resets the inactivity clock, updates the",
+        "statistical model, and clears any active anomaly flag."
+      ],
+      "discriminator": [
+        209,
+        253,
+        4,
+        217,
+        250,
+        241,
+        207,
+        50
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "activity",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  116,
+                  105,
+                  118,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim_inheritance",
+      "docs": [
+        "Non-shielded vaults: the beneficiary calls this to receive all lamports.",
+        "For shielded vaults, use guardians + record_cloak_claim instead."
+      ],
+      "discriminator": [
+        250,
+        34,
+        9,
+        63,
+        155,
+        43,
+        165,
+        249
+      ],
+      "accounts": [
+        {
+          "name": "beneficiary",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.owner",
+                "account": "VaultAccount"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "activity",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  116,
+                  105,
+                  118,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_orphaned_covenant",
+      "docs": [
+        "Recovers rent from a CovenantAccount PDA that became permanently",
+        "unexecutable when the vault was triggered."
+      ],
+      "discriminator": [
+        40,
+        70,
+        45,
+        220,
+        82,
+        32,
+        180,
+        147
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.owner",
+                "account": "VaultAccount"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "covenant",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  118,
+                  101,
+                  110,
+                  97,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "covenant.covenant_index",
+                "account": "CovenantAccount"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_vault",
+      "docs": [
+        "Closes the vault and returns all lamports to the owner.",
+        "Requires `deposited_lamports == 0` and `is_triggered == false`."
+      ],
+      "discriminator": [
+        141,
+        103,
+        17,
+        126,
+        72,
+        75,
+        29,
+        29
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "activity",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  116,
+                  105,
+                  118,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "configure_threshold",
+      "docs": [
+        "Updates the inactivity threshold on an existing vault.",
+        "Resets progressive warning flags so the watcher recalculates milestones."
+      ],
+      "discriminator": [
+        138,
+        93,
+        142,
+        78,
+        64,
+        28,
+        29,
+        13
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "new_threshold_slots",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "create_covenant",
+      "docs": [
+        "Opens a new covenant. The calling guardian is automatically the first",
+        "signer. Other guardians call `guardian_sign` to add their signatures."
+      ],
+      "discriminator": [
+        10,
+        247,
+        185,
+        101,
+        9,
+        203,
+        124,
+        97
+      ],
+      "accounts": [
+        {
+          "name": "guardian",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.owner",
+                "account": "VaultAccount"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "guardian"
+              }
+            ]
+          }
+        },
+        {
+          "name": "covenant",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  118,
+                  101,
+                  110,
+                  97,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "vault.covenant_counter",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "covenant_type",
+          "type": {
+            "defined": {
+              "name": "CovenantType"
+            }
+          }
+        },
+        {
+          "name": "target",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "deposit",
+      "docs": [
+        "Transfers lamports from the owner into the vault PDA.",
+        "For Cloak-shielded vaults, use record_cloak_deposit instead."
+      ],
+      "discriminator": [
+        242,
+        35,
+        198,
+        137,
+        82,
+        225,
+        242,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.owner",
+                "account": "VaultAccount"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "lamports",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "emergency_sweep",
+      "docs": [
+        "Executes an approved EmergencySweep covenant. Non-shielded vaults only.",
+        "For shielded vaults, guardians must use the off-chain Cloak transfer."
+      ],
+      "discriminator": [
+        172,
+        124,
+        148,
+        179,
+        216,
+        193,
+        206,
+        41
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.owner",
+                "account": "VaultAccount"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "beneficiary",
+          "writable": true
+        },
+        {
+          "name": "covenant",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  118,
+                  101,
+                  110,
+                  97,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "covenant.covenant_index",
+                "account": "CovenantAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "activity",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  116,
+                  105,
+                  118,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "execute_covenant",
+      "docs": [
+        "Executes a BeneficiaryChange or GuardianRemoval covenant after the",
+        "required signatures and timelock have been satisfied."
+      ],
+      "discriminator": [
+        155,
+        228,
+        52,
+        114,
+        238,
+        108,
+        245,
+        134
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.owner",
+                "account": "VaultAccount"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "covenant",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  118,
+                  101,
+                  110,
+                  97,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "covenant.covenant_index",
+                "account": "CovenantAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "target_guardian",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "covenant.target",
+                "account": "CovenantAccount"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "guardian_sign",
+      "docs": [
+        "Adds a guardian's signature to an open covenant."
+      ],
+      "discriminator": [
+        164,
+        230,
+        163,
+        92,
+        18,
+        200,
+        146,
+        39
+      ],
+      "accounts": [
+        {
+          "name": "guardian",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.owner",
+                "account": "VaultAccount"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "guardian"
+              }
+            ]
+          }
+        },
+        {
+          "name": "covenant",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  118,
+                  101,
+                  110,
+                  97,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "covenant.covenant_index",
+                "account": "CovenantAccount"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize_vault",
+      "docs": [
+        "Creates a new VaultAccount and ActivityAccount for the caller.",
+        "`vault_index` allows one owner to maintain multiple vaults.",
+        "`inactivity_threshold_slots` defaults to the protocol minimum if 0.",
+        "`beneficiary_utxo_pubkey` is the 32-byte Cloak UTXO public key of the",
+        "intended beneficiary (generated client-side via generateUtxoKeypair())."
+      ],
+      "discriminator": [
+        48,
+        191,
+        163,
+        44,
+        71,
+        129,
+        63,
+        164
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "arg",
+                "path": "vault_index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "activity",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  116,
+                  105,
+                  118,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "vault_index",
+          "type": "u64"
+        },
+        {
+          "name": "inactivity_threshold_slots",
+          "type": "u64"
+        },
+        {
+          "name": "beneficiary_utxo_pubkey",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "record_cloak_claim",
+      "docs": [
+        "Permissionless. Closes Anchor accounts after guardians have completed",
+        "the off-chain Cloak shield-to-shield inheritance transfer.",
+        "The caller receives vault + activity rent as a submission incentive."
+      ],
+      "discriminator": [
+        103,
+        4,
+        93,
+        40,
+        157,
+        82,
+        173,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Receives rent from vault + activity account closure."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.owner",
+                "account": "VaultAccount"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "activity",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  116,
+                  105,
+                  118,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "cloak_transfer_signature",
+          "type": {
+            "array": [
+              "u8",
+              64
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "record_cloak_deposit",
+      "docs": [
+        "Records an off-chain Cloak shielded deposit. The owner calls this after",
+        "successfully calling `transact()` in the Cloak SDK. No SOL moves through",
+        "this instruction — it only records the UTXO commitment for guardian use."
+      ],
+      "discriminator": [
+        246,
+        165,
+        15,
+        210,
+        129,
+        152,
+        195,
+        1
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "utxo_commitment",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "utxo_leaf_index",
+          "type": "u64"
+        },
+        {
+          "name": "shielded_lamports",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "remove_guardian",
+      "docs": [
+        "Phase 1: initiates the removal timelock for a guardian.",
+        "Phase 2: finalises the removal after the timelock has elapsed."
+      ],
+      "discriminator": [
+        72,
+        117,
+        160,
+        244,
+        155,
+        185,
+        71,
+        18
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian"
+        },
+        {
+          "name": "guardian_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "guardian"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "trigger_inheritance",
+      "docs": [
+        "Permissionless. Anyone may call this once the inactivity threshold is",
+        "crossed. Flips `vault.is_triggered` to true."
+      ],
+      "discriminator": [
+        102,
+        13,
+        227,
+        85,
+        64,
+        58,
+        12,
+        49
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.owner",
+                "account": "VaultAccount"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "ActivityAccount",
+      "discriminator": [
+        34,
+        70,
+        150,
+        139,
+        240,
+        34,
+        134,
+        248
+      ]
+    },
+    {
+      "name": "CovenantAccount",
+      "discriminator": [
+        152,
+        46,
+        38,
+        124,
+        167,
+        170,
+        129,
+        95
+      ]
+    },
+    {
+      "name": "GuardianAccount",
+      "discriminator": [
+        161,
+        115,
+        219,
+        82,
+        127,
+        201,
+        28,
+        142
+      ]
+    },
+    {
+      "name": "VaultAccount",
+      "discriminator": [
+        230,
+        251,
+        241,
+        83,
+        139,
+        202,
+        93,
+        28
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "AnomalyFlagged",
+      "discriminator": [
+        0,
+        97,
+        253,
+        244,
+        102,
+        20,
+        160,
+        176
+      ]
+    },
+    {
+      "name": "BeneficiaryChanged",
+      "discriminator": [
+        233,
+        192,
+        79,
+        252,
+        155,
+        91,
+        209,
+        28
+      ]
+    },
+    {
+      "name": "CheckedIn",
+      "discriminator": [
+        211,
+        80,
+        198,
+        244,
+        196,
+        84,
+        212,
+        150
+      ]
+    },
+    {
+      "name": "CloakDepositRecorded",
+      "discriminator": [
+        57,
+        14,
+        31,
+        154,
+        233,
+        130,
+        182,
+        170
+      ]
+    },
+    {
+      "name": "CovenantCreated",
+      "discriminator": [
+        130,
+        2,
+        6,
+        27,
+        131,
+        75,
+        228,
+        49
+      ]
+    },
+    {
+      "name": "CovenantSigned",
+      "discriminator": [
+        142,
+        45,
+        115,
+        82,
+        117,
+        114,
+        26,
+        198
+      ]
+    },
+    {
+      "name": "Deposited",
+      "discriminator": [
+        111,
+        141,
+        26,
+        45,
+        161,
+        35,
+        100,
+        57
+      ]
+    },
+    {
+      "name": "EmergencySwept",
+      "discriminator": [
+        15,
+        129,
+        54,
+        84,
+        91,
+        210,
+        118,
+        106
+      ]
+    },
+    {
+      "name": "GuardianAdded",
+      "discriminator": [
+        151,
+        0,
+        228,
+        5,
+        239,
+        58,
+        162,
+        18
+      ]
+    },
+    {
+      "name": "GuardianRemovalInitiated",
+      "discriminator": [
+        44,
+        23,
+        202,
+        30,
+        229,
+        201,
+        77,
+        189
+      ]
+    },
+    {
+      "name": "GuardianRemoved",
+      "discriminator": [
+        225,
+        27,
+        117,
+        56,
+        241,
+        196,
+        5,
+        56
+      ]
+    },
+    {
+      "name": "GuardianRemovedByCovenant",
+      "discriminator": [
+        146,
+        99,
+        2,
+        251,
+        27,
+        23,
+        29,
+        99
+      ]
+    },
+    {
+      "name": "InheritanceClaimed",
+      "discriminator": [
+        187,
+        111,
+        117,
+        77,
+        6,
+        154,
+        244,
+        192
+      ]
+    },
+    {
+      "name": "InheritanceCloakClaimed",
+      "discriminator": [
+        83,
+        170,
+        195,
+        25,
+        50,
+        113,
+        191,
+        81
+      ]
+    },
+    {
+      "name": "InheritanceTriggered",
+      "discriminator": [
+        236,
+        16,
+        253,
+        180,
+        0,
+        41,
+        187,
+        191
+      ]
+    },
+    {
+      "name": "OrphanedCovenantClosed",
+      "discriminator": [
+        124,
+        215,
+        92,
+        12,
+        105,
+        31,
+        221,
+        119
+      ]
+    },
+    {
+      "name": "ThresholdUpdated",
+      "discriminator": [
+        7,
+        168,
+        77,
+        72,
+        136,
+        46,
+        170,
+        229
+      ]
+    },
+    {
+      "name": "VaultClosed",
+      "discriminator": [
+        238,
+        129,
+        38,
+        228,
+        227,
+        118,
+        249,
+        215
+      ]
+    },
+    {
+      "name": "VaultInitialised",
+      "discriminator": [
+        222,
+        98,
+        219,
+        32,
+        151,
+        180,
+        169,
+        248
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "UnauthorisedOwner",
+      "msg": "Only the vault owner can perform this action."
+    },
+    {
+      "code": 6001,
+      "name": "UnauthorisedGuardian",
+      "msg": "Only an active guardian of this vault can perform this action."
+    },
+    {
+      "code": 6002,
+      "name": "UnauthorisedBeneficiary",
+      "msg": "Only the vault beneficiary can claim."
+    },
+    {
+      "code": 6003,
+      "name": "VaultAlreadyTriggered",
+      "msg": "The vault has already been triggered for inheritance."
+    },
+    {
+      "code": 6004,
+      "name": "VaultNotTriggered",
+      "msg": "The inheritance threshold has not been reached yet."
+    },
+    {
+      "code": 6005,
+      "name": "VaultAlreadyClaimed",
+      "msg": "The vault has already been claimed."
+    },
+    {
+      "code": 6006,
+      "name": "VaultAlreadySwept",
+      "msg": "The vault has already been emergency-swept."
+    },
+    {
+      "code": 6007,
+      "name": "VaultNotEmpty",
+      "msg": "Drain the vault before closing it."
+    },
+    {
+      "code": 6008,
+      "name": "ThresholdTooLow",
+      "msg": "Inactivity threshold is below the protocol minimum."
+    },
+    {
+      "code": 6009,
+      "name": "ThresholdTooHigh",
+      "msg": "Inactivity threshold exceeds the protocol maximum."
+    },
+    {
+      "code": 6010,
+      "name": "ThresholdNotReached",
+      "msg": "The inactivity threshold has not been reached yet."
+    },
+    {
+      "code": 6011,
+      "name": "TooManyGuardians",
+      "msg": "This vault has reached the maximum number of guardians."
+    },
+    {
+      "code": 6012,
+      "name": "GuardiansStillRegistered",
+      "msg": "All guardians must be removed before the vault can be closed."
+    },
+    {
+      "code": 6013,
+      "name": "GuardianVaultMismatch",
+      "msg": "Guardian does not belong to this vault."
+    },
+    {
+      "code": 6014,
+      "name": "GuardianAlreadyInactive",
+      "msg": "This guardian has already been removed."
+    },
+    {
+      "code": 6015,
+      "name": "NoRemovalPending",
+      "msg": "No removal request is pending for this guardian."
+    },
+    {
+      "code": 6016,
+      "name": "RemovalTimelockActive",
+      "msg": "The guardian removal timelock has not elapsed yet."
+    },
+    {
+      "code": 6017,
+      "name": "ThresholdExceedsGuardianCount",
+      "msg": "M-of-N threshold cannot exceed the number of active guardians."
+    },
+    {
+      "code": 6018,
+      "name": "ThresholdTooSmall",
+      "msg": "M-of-N threshold must be at least 1."
+    },
+    {
+      "code": 6019,
+      "name": "AlreadySigned",
+      "msg": "This guardian has already signed this covenant."
+    },
+    {
+      "code": 6020,
+      "name": "CovenantAlreadyExecuted",
+      "msg": "This covenant has already been executed."
+    },
+    {
+      "code": 6021,
+      "name": "InsufficientSignatures",
+      "msg": "Not enough guardian signatures on this covenant."
+    },
+    {
+      "code": 6022,
+      "name": "CovenantTimelockActive",
+      "msg": "The covenant timelock has not elapsed yet."
+    },
+    {
+      "code": 6023,
+      "name": "CovenantTypeMismatch",
+      "msg": "Covenant type mismatch for this instruction."
+    },
+    {
+      "code": 6024,
+      "name": "CovenantVaultMismatch",
+      "msg": "Covenant does not belong to this vault."
+    },
+    {
+      "code": 6025,
+      "name": "AnomalyAlreadyFlagged",
+      "msg": "An anomaly flag is already active on this vault."
+    },
+    {
+      "code": 6026,
+      "name": "InvalidBeneficiary",
+      "msg": "Beneficiary cannot be the zero address."
+    },
+    {
+      "code": 6027,
+      "name": "ZeroAmount",
+      "msg": "Lamport amount must be greater than zero."
+    },
+    {
+      "code": 6028,
+      "name": "SameSlotCheckIn",
+      "msg": "A check-in was already submitted in this slot."
+    },
+    {
+      "code": 6029,
+      "name": "MathOverflow",
+      "msg": "Arithmetic overflow."
+    }
+  ],
+  "types": [
+    {
+      "name": "ActivityAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "docs": [
+              "The vault this activity record belongs to."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "checkin_count",
+            "docs": [
+              "Total number of successful check-ins recorded."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "sum_of_intervals",
+            "docs": [
+              "Cumulative sum of all check-in intervals in slots. Dividing by",
+              "`checkin_count` gives the rolling average interval. Using a sum rather",
+              "than a running average avoids precision loss from repeated integer",
+              "division."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "last_interval",
+            "docs": [
+              "The interval (in slots) between the two most recent check-ins. Kept",
+              "separate so the anomaly detector can compare the current silence against",
+              "the historical average without waiting for the next check-in to update",
+              "sum_of_intervals."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "anomaly_flagged",
+            "docs": [
+              "Set to true by `anomaly_flag`. Cleared back to false on every successful",
+              "`check_in`. Protected against double-set by AnomalyAlreadyFlagged."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "anomaly_flagged_slot",
+            "docs": [
+              "The slot at which the most recent anomaly flag was raised. Zero if no",
+              "flag is currently active. The watcher correlates notification timing",
+              "from this timestamp — overwriting it silently loses the original",
+              "detection moment."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "The canonical bump seed for this PDA."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AnomalyFlagged",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "flagged_slot",
+            "type": "u64"
+          },
+          {
+            "name": "last_check_in_slot",
+            "type": "u64"
+          },
+          {
+            "name": "checkin_count",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BeneficiaryChanged",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "old_beneficiary_utxo_pubkey",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "new_beneficiary_utxo_pubkey",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "covenant",
+            "type": "pubkey"
+          },
+          {
+            "name": "executed_slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CheckedIn",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          },
+          {
+            "name": "interval",
+            "type": "u64"
+          },
+          {
+            "name": "checkin_count",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CloakDepositRecorded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "utxo_commitment",
+            "docs": [
+              "Poseidon commitment of the new UTXO in the Cloak shielded pool."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "utxo_leaf_index",
+            "docs": [
+              "Leaf position of this UTXO in Cloak's Merkle tree."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "lamports",
+            "docs": [
+              "Lamports shielded in this deposit."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_lamports",
+            "docs": [
+              "Cumulative shielded lamports across all deposits."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CovenantAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "docs": [
+              "The vault this covenant acts upon."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "covenant_type",
+            "docs": [
+              "What this covenant will do when executed."
+            ],
+            "type": {
+              "defined": {
+                "name": "CovenantType"
+              }
+            }
+          },
+          {
+            "name": "target",
+            "docs": [
+              "Auxiliary pubkey: unused for EmergencySweep (Pubkey::default()), new",
+              "beneficiary for BeneficiaryChange, guardian to remove for",
+              "GuardianRemoval."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "signers",
+            "docs": [
+              "Pubkeys of guardians who have already signed this covenant."
+            ],
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "required_signatures",
+            "docs": [
+              "Minimum signatures required before the covenant is executable. Copied",
+              "from `vault.m_of_n_threshold` at creation time so a later threshold",
+              "change does not retroactively lower the bar."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "created_slot",
+            "docs": [
+              "The slot at which this covenant was created."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "timelock_slots",
+            "docs": [
+              "Additional slots that must elapse after `required_signatures` is",
+              "reached before the covenant can be executed."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "signatures_complete_slot",
+            "docs": [
+              "The slot at which the final required signature was collected. Zero until",
+              "the covenant reaches M-of-N. The execution instruction checks that",
+              "`Clock::slot >= signatures_complete_slot + timelock_slots`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "covenant_index",
+            "docs": [
+              "Monotonic index derived from `vault.covenant_counter`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "is_executed",
+            "docs": [
+              "Set to true when the covenant is successfully executed."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "The canonical bump seed for this PDA."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CovenantCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "covenant",
+            "type": "pubkey"
+          },
+          {
+            "name": "covenant_type",
+            "type": {
+              "defined": {
+                "name": "CovenantType"
+              }
+            }
+          },
+          {
+            "name": "covenant_index",
+            "type": "u64"
+          },
+          {
+            "name": "required_sigs",
+            "type": "u8"
+          },
+          {
+            "name": "first_signer",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CovenantSigned",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "covenant",
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_signers",
+            "type": "u8"
+          },
+          {
+            "name": "required_signers",
+            "type": "u8"
+          },
+          {
+            "name": "threshold_reached",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CovenantType",
+      "docs": [
+        "Identifies the action that a covenant authorises once it reaches M-of-N",
+        "signatures."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "EmergencySweep"
+          },
+          {
+            "name": "BeneficiaryChange"
+          },
+          {
+            "name": "GuardianRemoval"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Deposited",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "lamports",
+            "type": "u64"
+          },
+          {
+            "name": "total",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EmergencySwept",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "beneficiary",
+            "type": "pubkey"
+          },
+          {
+            "name": "lamports",
+            "type": "u64"
+          },
+          {
+            "name": "swept_slot",
+            "type": "u64"
+          },
+          {
+            "name": "covenant",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GuardianAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "docs": [
+              "The vault this guardian is registered to."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian",
+            "docs": [
+              "The guardian's own wallet pubkey."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "is_active",
+            "docs": [
+              "True while the guardian is in good standing."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "added_slot",
+            "docs": [
+              "The slot at which this guardian was first registered."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "removal_requested_slot",
+            "docs": [
+              "When the owner initiates a removal, this is set to the current slot.",
+              "Zero means no removal is pending. The removal can only be finalised",
+              "after GUARDIAN_REMOVAL_TIMELOCK_SLOTS have elapsed from this slot."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "The canonical bump seed for this PDA."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GuardianAdded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian_count",
+            "type": "u8"
+          },
+          {
+            "name": "m_of_n",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GuardianRemovalInitiated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "removal_requested_slot",
+            "type": "u64"
+          },
+          {
+            "name": "finalise_after_slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GuardianRemoved",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian_count",
+            "type": "u8"
+          },
+          {
+            "name": "m_of_n",
+            "type": "u8"
+          },
+          {
+            "name": "threshold_lowered",
+            "docs": [
+              "True when the M-of-N threshold was automatically lowered to match the",
+              "new guardian count. Off-chain monitors should alert the vault owner."
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GuardianRemovedByCovenant",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "covenant",
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian_count",
+            "type": "u8"
+          },
+          {
+            "name": "m_of_n",
+            "type": "u8"
+          },
+          {
+            "name": "threshold_lowered",
+            "type": "bool"
+          },
+          {
+            "name": "executed_slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "InheritanceClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "beneficiary",
+            "type": "pubkey"
+          },
+          {
+            "name": "lamports",
+            "type": "u64"
+          },
+          {
+            "name": "claimed_slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "InheritanceCloakClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "beneficiary_utxo_pubkey",
+            "docs": [
+              "Raw 32-byte Cloak UTXO public key of the beneficiary.",
+              "This is not a Solana address — it identifies the beneficiary's",
+              "shielded identity within Cloak's circuit."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "lamports",
+            "docs": [
+              "Declared lamports transferred (not verifiable on-chain — SOL moved",
+              "through Cloak's shielded pool, not through this program)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "cloak_transfer_signature",
+            "docs": [
+              "Solana transaction signature of the Cloak shield-to-shield transfer.",
+              "Allows any auditor to verify the shielded transfer occurred without",
+              "revealing amounts or counterparty identities."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          },
+          {
+            "name": "claimed_slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "InheritanceTriggered",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "beneficiary",
+            "docs": [
+              "For shielded vaults this is the 32-byte Cloak UTXO public key of the",
+              "beneficiary, transmitted as a Pubkey for wire-format compatibility with",
+              "existing SDK event parsers. For non-shielded vaults it is the",
+              "beneficiary's Solana wallet address."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "triggered_slot",
+            "type": "u64"
+          },
+          {
+            "name": "last_check_in_slot",
+            "type": "u64"
+          },
+          {
+            "name": "deposited_lamports",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OrphanedCovenantClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "covenant",
+            "type": "pubkey"
+          },
+          {
+            "name": "covenant_index",
+            "type": "u64"
+          },
+          {
+            "name": "covenant_type",
+            "type": {
+              "defined": {
+                "name": "CovenantType"
+              }
+            }
+          },
+          {
+            "name": "caller",
+            "type": "pubkey"
+          },
+          {
+            "name": "closed_slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ThresholdUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "old_threshold",
+            "type": "u64"
+          },
+          {
+            "name": "new_threshold",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VaultAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "docs": [
+              "Wallet that created this vault and is allowed to check in, configure",
+              "thresholds, add guardians, and close the vault."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "beneficiary_utxo_pubkey",
+            "docs": [
+              "32-byte Cloak UTXO public key for the beneficiary.",
+              "",
+              "This is NOT a Solana wallet pubkey. It is the public half of the UTXO",
+              "keypair generated by the beneficiary using `generateUtxoKeypair()` from",
+              "the Cloak SDK. Only the beneficiary knows the corresponding private key.",
+              "",
+              "For non-shielded vaults (legacy mode), this stores the raw bytes of the",
+              "beneficiary's Solana wallet pubkey so that `claim_inheritance` can still",
+              "verify identity via `Pubkey::from(vault.beneficiary_utxo_pubkey)`.",
+              "",
+              "Stored as raw bytes (not Pubkey) to accommodate Cloak's curve arithmetic",
+              "which uses a different encoding than Solana's Ed25519 addresses."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "guardian_count",
+            "docs": [
+              "Number of guardian accounts currently registered and active."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "m_of_n_threshold",
+            "docs": [
+              "Minimum number of guardian signatures required to execute any covenant.",
+              "Invariant: 1 ≤ m_of_n_threshold ≤ guardian_count (when guardian_count > 0)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "inactivity_threshold_slots",
+            "docs": [
+              "How long the owner must be silent before the vault becomes claimable,",
+              "measured in Solana slots (~2 slots/second)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "last_check_in_slot",
+            "docs": [
+              "The slot number of the owner's most recent check-in. This is the anchor",
+              "point for all inactivity calculations."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "created_slot",
+            "docs": [
+              "The slot at which this vault was initialised. Used for auditing and to",
+              "seed the first activity interval."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "deposited_lamports",
+            "docs": [
+              "Total lamports declared as shielded. For Cloak vaults, this is the",
+              "amount the owner recorded via `record_cloak_deposit`. The SOL itself",
+              "resides in Cloak's shielded pool, not in this PDA — the on-chain",
+              "balance of this PDA stays at rent-exempt minimum.",
+              "",
+              "For non-shielded vaults, this tracks the lamports actually held in",
+              "this PDA (same semantics as before Cloak integration)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "covenant_counter",
+            "docs": [
+              "Monotonically increasing counter used to derive unique covenant PDAs."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "vault_index",
+            "docs": [
+              "The index used when deriving this vault's PDA. Allows one owner to",
+              "maintain multiple vaults simultaneously."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "utxo_commitment",
+            "docs": [
+              "Poseidon commitment of the shielded UTXO recorded by `record_cloak_deposit`.",
+              "All zeros means this vault has no shielded deposit recorded yet.",
+              "",
+              "This commitment is the cryptographic proof that the vault owner",
+              "deposited into Cloak. It cannot be forged without knowledge of the",
+              "UTXO private key. Block explorers show only this 32-byte hash — not",
+              "the balance, not the depositor, not the beneficiary."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "utxo_leaf_index",
+            "docs": [
+              "Leaf index of the shielded UTXO in Cloak's Merkle tree.",
+              "Used by guardians to retrieve the correct UTXO object during",
+              "inheritance execution. Zero until `record_cloak_deposit` is called."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "is_triggered",
+            "docs": [
+              "Set to true once `trigger_inheritance` succeeds. After this point the",
+              "owner can no longer check in or modify vault parameters."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "is_claimed",
+            "docs": [
+              "Set to true once the beneficiary has successfully claimed (either via",
+              "`claim_inheritance` for non-shielded vaults, or `record_cloak_claim`",
+              "after a shielded transfer)."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "is_emergency_swept",
+            "docs": [
+              "Set to true once an emergency sweep has drained the vault."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "warning_75_sent",
+            "docs": [
+              "Tracks whether the 75% warning event has been emitted."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "warning_90_sent",
+            "docs": [
+              "Tracks whether the 90% warning event has been emitted."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "The canonical bump seed for this PDA, saved at initialisation."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VaultClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VaultInitialised",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "beneficiary_utxo_pubkey",
+            "docs": [
+              "Raw bytes of the beneficiary's Cloak UTXO public key.",
+              "Not a Solana address — do not attempt to load this as an account."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "threshold_slots",
+            "type": "u64"
+          },
+          {
+            "name": "created_slot",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+# Rust / Cargo
+target/
+**/*.rs.bk
+
+# Anchor
+.anchor/
+target/deploy/*.json
+
+# Node
+node_modules/
+dist/
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+.vercel
+.env*.local
