@@ -127,9 +127,9 @@ export function BeneficiaryClaim({ vaultPda }: Props) {
         setError("Private key must be 32 bytes (base64-encoded)");
         return;
       }
-      // getNkFromUtxoPrivateKey accepts Uint8Array and returns Uint8Array per
-      // the authoritative @cloak.dev/sdk API. No type cast is needed or correct.
-      const viewingKeyNk = getNkFromUtxoPrivateKey(bytes) as Uint8Array;
+      const bytesToBigint = (arr: Uint8Array): bigint => arr.reduce((r, b) => (r << 8n) | BigInt(b), 0n);
+      const bigintToBytes32 = (v: bigint): Uint8Array => { const b = new Uint8Array(32); let val = v; for (let i = 31; i >= 0; i--) { b[i] = Number(val & 0xffn); val >>= 8n; } return b; };
+      const viewingKeyNk = bigintToBytes32(getNkFromUtxoPrivateKey(bytesToBigint(bytes)) as unknown as bigint);
       const id: UtxoIdentity = {
         privateKey:   bytes,
         publicKey:    new Uint8Array(32), // not needed for scanning or withdrawal
