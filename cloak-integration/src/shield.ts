@@ -132,7 +132,7 @@ export async function depositToShieldedVault(params: {
   //   signTransaction     — the owner's browser wallet signs + pays the fee
   //   depositorPublicKey  — wallet public key identifying the depositor
   //   walletPublicKey     — wallet public key for relay identity binding
-  //   chainNoteViewingKeyNk — owner's viewing key (bigint) for encrypting the chain note
+  //   chainNoteViewingKeyNk — owner's viewing key Uint8Array(32) for encrypting the chain note
   //
   // These are the exact field names required by @cloak.dev/sdk's TransactOptions
   // in wallet adapter mode (see sdk/wallet-integration docs). There is no
@@ -150,7 +150,7 @@ export async function depositToShieldedVault(params: {
       signTransaction:       ownerWallet.signTransaction,
       depositorPublicKey:    ownerWallet.publicKey,
       walletPublicKey:       ownerWallet.publicKey,
-      chainNoteViewingKeyNk: bytesToBigint(viewingKeyNk),
+      chainNoteViewingKeyNk: viewingKeyNk,
     } as any,
   );
 
