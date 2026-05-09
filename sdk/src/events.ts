@@ -64,7 +64,7 @@ class Reader {
   }
 
   u64(): bigint {
-    const val = this.buf.readBigUInt64LE(this.pos);
+    let val = 0n; for (let i = 7; i >= 0; i--) { val = (val << 8n) | BigInt(this.buf[this.pos + i]); }
     this.pos += 8;
     return val;
   }

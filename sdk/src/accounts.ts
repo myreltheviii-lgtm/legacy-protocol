@@ -29,7 +29,7 @@ function readPubkey(buf: Buffer, offset: number): string {
 }
 
 function readU64(buf: Buffer, offset: number): bigint {
-  return buf.readBigUInt64LE(offset);
+  let val = 0n; for (let i = 7; i >= 0; i--) { val = (val << 8n) | BigInt(buf[offset + i]); } return val;
 }
 
 function readBytes32Hex(buf: Buffer, offset: number): string {
