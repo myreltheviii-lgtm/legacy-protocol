@@ -10,13 +10,13 @@
 //     direct the beneficiary to /claim which uses BeneficiaryClaim
 //   - Observer: trigger button (permissionless), blink links
 //
-// Security fix: ownerIdentity is held in a useRef rather than useState so the
+// Security: ownerIdentity is held in a useRef rather than useState so the
 // UtxoIdentity.privateKey bytes never appear in the React state tree, DevTools
 // snapshots, or any memory dump of component state. A companion boolean state
 // (hasOwnerIdentity) drives conditional renders without exposing the key.
 // The private key is explicitly zeroed via fill(0) before the ref is cleared.
 //
-// Performance fix: doRefresh is wrapped in useCallback so its reference is
+// Performance: doRefresh is wrapped in useCallback so its reference is
 // stable across renders. The same stable reference is passed to useVaultRealtime,
 // preventing subscription churn (remove + re-add on every render cycle).
 
@@ -46,8 +46,8 @@ import {
   ActivityZone,
   isVaultShielded,
 } from "@legacy-protocol/sdk";
-import { PublicKey }   from "@solana/web3.js";
-import { PROGRAM_ID }  from "@/lib/sdk";
+import { PublicKey }  from "@solana/web3.js";
+import { PROGRAM_ID } from "@/lib/sdk";
 import { useVault }         from "@/hooks/useVault";
 import { useVaultRealtime } from "@/hooks/useVaultRealtime";
 import { useGuardians }     from "@/hooks/useGuardians";
@@ -65,6 +65,7 @@ import { ShieldedDepositFlow }       from "@/components/ShieldedDepositFlow";
 import { GuardianShareDistribution }  from "@/components/GuardianShareDistribution";
 import { InheritanceExecutor }       from "@/components/InheritanceExecutor";
 import { importBeneficiaryIdentity } from "@legacy-protocol/cloak-integration";
+import { isRestrictedInAppBrowser }  from "@/lib/browser-env";
 import type { UtxoIdentity }         from "@legacy-protocol/cloak-integration";
 import {
   shortAddress,
@@ -108,12 +109,8 @@ export default function VaultPage({ params }: Props) {
   const ownerIdentityRef = useRef<UtxoIdentity | null>(null);
   const [hasOwnerIdentity, setHasOwnerIdentity] = useState(false);
 
-  // Wrapper that mimics the useState setter API so existing call-sites are
-  // unchanged. Setting null explicitly zeroes the private key bytes first.
   function setOwnerIdentity(id: UtxoIdentity | null) {
     if (id === null) {
-      // Zero the private key bytes before releasing the reference so the
-      // 32-byte secret cannot be recovered from freed memory by GC.
       if (ownerIdentityRef.current) {
         ownerIdentityRef.current.privateKey.fill(0);
         ownerIdentityRef.current = null;
@@ -125,13 +122,15 @@ export default function VaultPage({ params }: Props) {
     }
   }
 
-  const [showDepositFlow,    setShowDepositFlow]     = useState(false);
-  const [showShareDist,      setShowShareDist]       = useState(false);
-  const [showOwnerImport,    setShowOwnerImport]     = useState(false);
-  const [ownerImportMode,    setOwnerImportMode]     = useState<"deposit" | "shares">("deposit");
-  const [ownerImportPw,      setOwnerImportPw]       = useState("");
-  const [ownerImportError,   setOwnerImportError]    = useState<string | null>(null);
-  const [importingOwner,     setImportingOwner]      = useState(false);
+  const [showDepositFlow,      setShowDepositFlow]      = useState(false);
+  const [showShareDist,        setShowShareDist]        = useState(false);
+  const [showOwnerImport,      setShowOwnerImport]      = useState(false);
+  const [ownerImportMode,      setOwnerImportMode]      = useState<"deposit" | "shares">("deposit");
+  const [ownerImportPw,        setOwnerImportPw]        = useState("");
+  const [ownerImportError,     setOwnerImportError]     = useState<string | null>(null);
+  const [importingOwner,       setImportingOwner]       = useState(false);
+  const [ownerImportPasteMode, setOwnerImportPasteMode] = useState(false);
+  const [ownerImportPastedJson, setOwnerImportPastedJson] = useState("");
   const ownerBackupFileRef = useRef<HTMLInputElement>(null);
 
   const prevZoneRef = useRef<ActivityZone | null>(null);
@@ -295,9 +294,14 @@ export default function VaultPage({ params }: Props) {
     setOwnerImportMode(mode);
     setOwnerImportPw("");
     setOwnerImportError(null);
+    setOwnerImportPastedJson("");
+    // Default to paste mode inside restricted browsers since the file picker
+    // is blocked in Phantom and similar wallet-embedded environments.
+    setOwnerImportPasteMode(isRestrictedInAppBrowser());
     setShowOwnerImport(true);
   }
 
+  // Handles import when the user selects a backup file via the file picker.
   async function handleOwnerBackupFile(file: File) {
     setOwnerImportError(null);
     if (!ownerImportPw) { setOwnerImportError("Enter your backup password first"); return; }
@@ -319,9 +323,34 @@ export default function VaultPage({ params }: Props) {
     }
   }
 
+  // Handles import when the user pastes their backup JSON directly. Used in
+  // restricted browsers where the file picker is unavailable, and available
+  // as an option on all browsers for users who backed up via clipboard.
+  async function handleOwnerPasteImport() {
+    setOwnerImportError(null);
+    if (!ownerImportPw)              { setOwnerImportError("Enter your backup password first"); return; }
+    if (!ownerImportPastedJson.trim()) { setOwnerImportError("Paste your backup JSON first"); return; }
+    setImportingOwner(true);
+    try {
+      const identity = await importBeneficiaryIdentity(ownerImportPastedJson.trim(), ownerImportPw);
+      setOwnerIdentity(identity);
+      setShowOwnerImport(false);
+      setOwnerImportPastedJson("");
+      if (ownerImportMode === "deposit") {
+        setShowDepositFlow(true);
+      } else {
+        setShowShareDist(true);
+      }
+    } catch (err) {
+      setOwnerImportError(err instanceof Error ? err.message : "Import failed — check password and backup JSON");
+    } finally {
+      setImportingOwner(false);
+    }
+  }
+
   // ── Role computation ───────────────────────────────────────────────────────
 
-  const isOwner = publicKey?.toBase58() === vault?.owner;
+  const isOwner       = publicKey?.toBase58() === vault?.owner;
   const shielded      = vault ? isVaultShielded(vault) : false;
   const isBeneficiary = !shielded && publicKey?.toBase58() === vault?.beneficiary;
   const isGuardian    = guardians.some((g) => g.account.guardian === publicKey?.toBase58());
@@ -352,7 +381,6 @@ export default function VaultPage({ params }: Props) {
 
       <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-8">
 
-        {/* Loading skeleton */}
         {loading && !vault && (
           <div className="space-y-6" aria-label="Loading vault" aria-busy="true">
             <div className="card flex flex-col md:flex-row items-center gap-8">
@@ -384,14 +412,12 @@ export default function VaultPage({ params }: Props) {
 
         {vault && (
           <>
-            {/* Notification permission banner */}
             {inactivity && (
               <div className="mb-4">
                 <NotificationPermissionBanner vaultAddress={address} zone={inactivity.zone} />
               </div>
             )}
 
-            {/* Role badge */}
             <div className="flex items-center gap-2 mb-6" aria-live="polite">
               <span className="label">Viewing as</span>
               {isOwner                              && <RoleBadge role="Owner"         color="var(--accent)" />}
@@ -445,6 +471,36 @@ export default function VaultPage({ params }: Props) {
                       </p>
                     </div>
 
+                    {/* Mode toggle — hidden in restricted browsers since file picker is blocked */}
+                    {!isRestrictedInAppBrowser() && (
+                      <div className="flex gap-1 p-1 rounded-lg" style={{ background: "rgba(255,255,255,0.04)" }}>
+                        <button
+                          type="button"
+                          className="flex-1 text-xs py-1.5 rounded-md transition-colors"
+                          style={{
+                            background: !ownerImportPasteMode ? "rgba(129,140,248,0.2)" : "transparent",
+                            color:      !ownerImportPasteMode ? "#818CF8" : "var(--text-muted)",
+                          }}
+                          onClick={() => { setOwnerImportPasteMode(false); setOwnerImportError(null); }}
+                          aria-pressed={!ownerImportPasteMode}
+                        >
+                          Load File
+                        </button>
+                        <button
+                          type="button"
+                          className="flex-1 text-xs py-1.5 rounded-md transition-colors"
+                          style={{
+                            background: ownerImportPasteMode ? "rgba(129,140,248,0.2)" : "transparent",
+                            color:      ownerImportPasteMode ? "#818CF8" : "var(--text-muted)",
+                          }}
+                          onClick={() => { setOwnerImportPasteMode(true); setOwnerImportError(null); }}
+                          aria-pressed={ownerImportPasteMode}
+                        >
+                          Paste JSON
+                        </button>
+                      </div>
+                    )}
+
                     <div>
                       <label className="label block mb-1">Backup Password</label>
                       <input
@@ -457,6 +513,21 @@ export default function VaultPage({ params }: Props) {
                       />
                     </div>
 
+                    {ownerImportPasteMode && (
+                      <div>
+                        <label className="label block mb-1">Backup JSON</label>
+                        <textarea
+                          value={ownerImportPastedJson}
+                          onChange={(e) => { setOwnerImportPastedJson(e.target.value); setOwnerImportError(null); }}
+                          placeholder='Paste your backup JSON here (starts with {"version":1,...})'
+                          rows={5}
+                          className="input w-full text-xs font-mono resize-none"
+                          aria-label="Paste backup JSON"
+                        />
+                      </div>
+                    )}
+
+                    {/* Hidden file input — only used on the Load File path */}
                     <input
                       ref={ownerBackupFileRef}
                       type="file"
@@ -464,7 +535,7 @@ export default function VaultPage({ params }: Props) {
                       style={{ display: "none" }}
                       onChange={(e) => {
                         const f = e.target.files?.[0];
-                        if (f) handleOwnerBackupFile(f);
+                        if (f) void handleOwnerBackupFile(f);
                       }}
                     />
 
@@ -475,18 +546,33 @@ export default function VaultPage({ params }: Props) {
                     <div className="flex gap-3">
                       <button
                         className="btn-secondary"
-                        onClick={() => { setShowOwnerImport(false); setOwnerImportPw(""); }}
+                        onClick={() => {
+                          setShowOwnerImport(false);
+                          setOwnerImportPw("");
+                          setOwnerImportPastedJson("");
+                        }}
                       >
                         Cancel
                       </button>
-                      <button
-                        className="btn-primary"
-                        onClick={() => ownerBackupFileRef.current?.click()}
-                        disabled={!ownerImportPw || importingOwner}
-                        aria-label="Load encrypted vault key backup file"
-                      >
-                        {importingOwner ? "Importing…" : "Load Backup File"}
-                      </button>
+                      {ownerImportPasteMode ? (
+                        <button
+                          className="btn-primary flex-1"
+                          onClick={() => void handleOwnerPasteImport()}
+                          disabled={!ownerImportPw || !ownerImportPastedJson.trim() || importingOwner}
+                          aria-label="Import vault key from pasted backup JSON"
+                        >
+                          {importingOwner ? "Importing…" : "Import"}
+                        </button>
+                      ) : (
+                        <button
+                          className="btn-primary flex-1"
+                          onClick={() => ownerBackupFileRef.current?.click()}
+                          disabled={!ownerImportPw || importingOwner}
+                          aria-label="Load encrypted vault key backup file"
+                        >
+                          {importingOwner ? "Importing…" : "Load Backup File"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -510,9 +596,9 @@ export default function VaultPage({ params }: Props) {
                     mOfNThreshold={vault.mOfNThreshold}
                     onComplete={() => {
                       setShowShareDist(false);
-                      // Private key is zeroed by GuardianShareDistribution's
-                      // useEffect finally block. Clear the ref so we don't
-                      // hold a reference to the zeroed Uint8Array.
+                      // GuardianShareDistribution zeroes the private key in its
+                      // own cleanup. Clear the ref so we don't hold a pointer
+                      // to the zeroed Uint8Array.
                       setOwnerIdentity(null);
                     }}
                   />
