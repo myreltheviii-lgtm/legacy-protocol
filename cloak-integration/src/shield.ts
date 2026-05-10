@@ -5,6 +5,7 @@
 
 import {
   CLOAK_PROGRAM_ID,
+  getShieldPoolPDAs,
   NATIVE_SOL_MINT,
   MIN_DEPOSIT_LAMPORTS,
   generateUtxoKeypair,
@@ -18,6 +19,7 @@ import {
   splitSecret,
   encodeShareBase64,
 } from "@legacy-protocol/sdk";
+import { PublicKey as SolanaPublicKey } from "@solana/web3.js";
 import type { Connection, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
 import type {
   UtxoIdentity,
@@ -148,6 +150,7 @@ export async function depositToShieldedVault(params: {
     {
       connection,
       programId:             CLOAK_PROGRAM_ID,
+  getShieldPoolPDAs,
       signTransaction:       ownerWallet.signTransaction,
       signMessage:           ownerWallet.signMessage,
       depositorPublicKey:    ownerWallet.publicKey,
