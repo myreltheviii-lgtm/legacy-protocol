@@ -13,6 +13,7 @@ config.resolver.extraNodeModules = {
   url: require.resolve("url"),
   readline: require.resolve("readline"),
   snarkjs: false,
+  'web-worker': false,
   fastfile: false,
   circom_runtime: false,
 };
