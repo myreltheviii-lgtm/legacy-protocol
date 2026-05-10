@@ -11,7 +11,7 @@ config.resolver.extraNodeModules = {
   https: require.resolve("https-browserify"),
   os: require.resolve("os-browserify/browser"),
   url: require.resolve("url"),
-  readline: false,
+  readline: require.resolve("readline"),
   snarkjs: false,
   fastfile: false,
   circom_runtime: false,
