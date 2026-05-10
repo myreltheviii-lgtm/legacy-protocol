@@ -9,7 +9,7 @@ import {
   scanTransactions,
   toComplianceReport,
   fullWithdraw,
-} from "@cloak.dev/sdk";
+} from "@cloak.dev/sdk-devnet";
 import type { Connection, PublicKey } from "@solana/web3.js";
 import { PublicKey as SolanaPublicKey } from "@solana/web3.js";
 import type { ComplianceProof } from "./types";

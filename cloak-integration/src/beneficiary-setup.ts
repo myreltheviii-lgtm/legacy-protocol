@@ -9,7 +9,7 @@
 import {
   generateUtxoKeypair,
   getNkFromUtxoPrivateKey,
-} from "@cloak.dev/sdk";
+} from "@cloak.dev/sdk-devnet";
 import type { UtxoIdentity } from "./types";
 
 // ── Generation ────────────────────────────────────────────────────────────────

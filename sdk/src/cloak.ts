@@ -24,13 +24,13 @@ export {
   getDistributableAmount,
   MIN_DEPOSIT_LAMPORTS,
   FIXED_FEE_LAMPORTS,
-} from "@cloak.dev/sdk";
+} from "@cloak.dev/sdk-devnet";
 
 import {
   calculateFee,
   getDistributableAmount,
   MIN_DEPOSIT_LAMPORTS,
-} from "@cloak.dev/sdk";
+} from "@cloak.dev/sdk-devnet";
 
 // ── Legacy-specific helpers ───────────────────────────────────────────────────
 

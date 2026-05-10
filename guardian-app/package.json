@@ -5,7 +5,8 @@
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
-    "build:preview": "eas build --platform android --profile preview"
+    "build:preview": "eas build --platform android --profile preview",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.0.0",

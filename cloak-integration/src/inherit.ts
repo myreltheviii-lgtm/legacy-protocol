@@ -29,7 +29,7 @@ import {
   scanTransactions,
   getNkFromUtxoPrivateKey,
   calculateFee,
-} from "@cloak.dev/sdk";
+} from "@cloak.dev/sdk-devnet";
 import {
   reconstructSecret,
   decodeShareBase64,
