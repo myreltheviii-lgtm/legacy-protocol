@@ -1,6 +1,7 @@
 
 [workspace]
 members = [
+  "app/src-tauri",
     "programs/legacy_vault",
     "crates/shamir",
 ]

@@ -1,3 +1,4 @@
+export const dynamic = "force-static";
 //
 // Solana Actions endpoint for claim_inheritance.
 //

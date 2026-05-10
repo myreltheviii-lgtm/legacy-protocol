@@ -1,3 +1,5 @@
+export function generateStaticParams() { return []; }
+
 "use client";
 
 // app/src/app/vault/[address]/page.tsx
