@@ -1,3 +1,4 @@
+import "./polyfills";
 // Font loading via next/font eliminates the render-blocking CSS @import that
 // globals.css previously used. next/font self-hosts font files and sets the
 // CSS variable names declared in tailwind.config.ts / globals.css so the rest
