@@ -1,19 +1,21 @@
 {
   "name": "@legacy-protocol/cloak-integration",
   "version": "1.0.0",
-  "description": "Cloak SDK integration layer for Legacy Protocol — shielded inheritance vault execution",
+  "description": "Cloak SDK integration layer for Legacy Protocol \u2014 shielded inheritance vault execution",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@cloak.dev/sdk": "^0.1.6",
     "@cloak.dev/sdk-devnet": "^0.1.5-devnet.1",
     "@legacy-protocol/sdk": "^0.3.1",
     "@solana/spl-token": "^0.4.8",
-    "@solana/web3.js": "^1.95.3"
+    "@solana/web3.js": "^1.95.3",
+    "patch-package": "^8.0.1"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
