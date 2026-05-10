@@ -32,7 +32,7 @@ function fmtSol(l: bigint): string {
 }
 
 export function ShieldedDepositFlow({ vaultPda, ownerUtxoIdentity, onComplete }: Props) {
-  const { publicKey, signTransaction } = useWallet();
+  const { publicKey, signTransaction, signMessage } = useWallet();
   const { connection } = useConnection();
 
   const [step,      setStep]      = useState<Step>("amount");
@@ -65,7 +65,7 @@ export function ShieldedDepositFlow({ vaultPda, ownerUtxoIdentity, onComplete }:
       // used or required for the Solana transaction layer.
       const result = await depositToShieldedVault({
         ownerUtxo:      ownerUtxoIdentity,
-        ownerWallet:    { publicKey, signTransaction },
+        ownerWallet:    { publicKey, signTransaction, signMessage },
         amountLamports: lamports,
         connection,
       });
@@ -226,7 +226,7 @@ export function ShieldedDepositFlow({ vaultPda, ownerUtxoIdentity, onComplete }:
       <button
         className="btn-primary w-full"
         onClick={() => { void handleShield(); }}
-        disabled={!meetsMin || !publicKey || !signTransaction}
+        disabled={!meetsMin || !publicKey || !signTransaction || !signMessage}
         aria-label="Shield SOL into Cloak shielded pool"
       >
         Shield SOL

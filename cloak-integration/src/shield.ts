@@ -48,6 +48,7 @@ function bytesToBigint(arr: Uint8Array): bigint {
 export interface ShieldWalletAdapter {
   publicKey:       PublicKey;
   signTransaction: <T extends Transaction | VersionedTransaction>(tx: T) => Promise<T>;
+  signMessage?:    (message: Uint8Array) => Promise<Uint8Array>;
 }
 
 // ── Vault owner identity ──────────────────────────────────────────────────────
@@ -148,6 +149,7 @@ export async function depositToShieldedVault(params: {
       connection,
       programId:             CLOAK_PROGRAM_ID,
       signTransaction:       ownerWallet.signTransaction,
+      signMessage:           ownerWallet.signMessage,
       depositorPublicKey:    ownerWallet.publicKey,
       walletPublicKey:       ownerWallet.publicKey,
       chainNoteViewingKeyNk: viewingKeyNk,
