@@ -13,6 +13,11 @@ import {
   depositToShieldedVault,
 } from "@legacy-protocol/cloak-integration";
 import { PublicKey } from "@solana/web3.js";
+
+const CLOAK_PROGRAM_ID = process.env.NEXT_PUBLIC_CLOAK_PROGRAM_ID
+  ? new PublicKey(process.env.NEXT_PUBLIC_CLOAK_PROGRAM_ID)
+  : undefined;
+const CLOAK_RELAY_URL = process.env.NEXT_PUBLIC_CLOAK_RELAY_URL ?? "https://api.cloak.ag";
 import { PROGRAM_ID } from "@/lib/sdk";
 import { explorerTxUrl } from "@/lib/format";
 import type { UtxoIdentity } from "@legacy-protocol/cloak-integration";
@@ -68,6 +73,8 @@ export function ShieldedDepositFlow({ vaultPda, ownerUtxoIdentity, onComplete }:
         ownerWallet:    { publicKey, signTransaction, signMessage },
         amountLamports: lamports,
         connection,
+        programId:      CLOAK_PROGRAM_ID,
+        relayUrl:       CLOAK_RELAY_URL,
       });
 
       setProofMs(Date.now() - proofStart);

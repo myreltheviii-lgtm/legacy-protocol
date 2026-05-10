@@ -106,8 +106,10 @@ export async function depositToShieldedVault(params: {
   ownerWallet:     ShieldWalletAdapter;
   amountLamports:  bigint;
   connection:      Connection;
+  programId?:      PublicKey;
+  relayUrl?:       string;
 }): Promise<ShieldedDepositResult> {
-  const { ownerUtxo, ownerWallet, amountLamports, connection } = params;
+  const { ownerUtxo, ownerWallet, amountLamports, connection, programId, relayUrl } = params;
 
   if (amountLamports < MIN_DEPOSIT_LAMPORTS) {
     throw new Error(
@@ -149,13 +151,14 @@ export async function depositToShieldedVault(params: {
     },
     {
       connection,
-      programId:             CLOAK_PROGRAM_ID,
+      programId:             programId ?? CLOAK_PROGRAM_ID,
   getShieldPoolPDAs,
       signTransaction:       ownerWallet.signTransaction,
       signMessage:           ownerWallet.signMessage,
       depositorPublicKey:    ownerWallet.publicKey,
       walletPublicKey:       ownerWallet.publicKey,
       chainNoteViewingKeyNk: viewingKeyNk,
+      relayUrl:              relayUrl ?? "https://api.cloak.ag",
     } as any,
   );
 
