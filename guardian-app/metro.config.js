@@ -14,6 +14,7 @@ config.resolver.extraNodeModules = {
   readline: require.resolve("readline"),
   snarkjs: false,
   circomlibjs: false,
+  circomlibjs: false,
 
   fastfile: false,
   circom_runtime: false,
