@@ -11,6 +11,9 @@ config.resolver.extraNodeModules = {
   https: require.resolve("https-browserify"),
   os: require.resolve("os-browserify/browser"),
   url: require.resolve("url"),
+  readline: false,
+  fastfile: false,
+  circom_runtime: false,
 };
 
 module.exports = config;
