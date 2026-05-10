@@ -14,7 +14,7 @@ import {
   transact,
   getNkFromUtxoPrivateKey,
   getDistributableAmount,
-} from "@cloak.dev/sdk";
+} from "@cloak.dev/sdk-devnet";
 import {
   splitSecret,
   encodeShareBase64,
