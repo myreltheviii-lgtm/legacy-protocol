@@ -1,6 +1,5 @@
-export function generateStaticParams() { return []; }
-
 "use client";
+export const dynamicParams = false;
 
 // app/src/app/vault/[address]/page.tsx
 //
