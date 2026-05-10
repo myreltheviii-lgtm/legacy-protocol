@@ -29,7 +29,7 @@ config.resolver.blockList = [
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (moduleName === 'web-worker') {
     return {
-      filePath: require.resolve('web-worker'),
+      filePath: require.resolve('web-worker/dist/browser/index.js'),
       type: 'sourceFile',
     };
   }
