@@ -50,6 +50,7 @@
     "expo-device": "~8.0.10",
     "expo-file-system": "~19.0.22",
     "expo-status-bar": "~3.0.9",
+    "ffjavascript": "^0.3.1",
     "https-browserify": "^1.0.0",
     "hyperdb": "^6.7.0",
     "hyperdrive": "^13.3.2",
