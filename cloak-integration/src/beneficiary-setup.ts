@@ -38,7 +38,7 @@ export async function generateBeneficiaryIdentity(): Promise<UtxoIdentity> {
   const privateKey   = bigintToBytes32(keypair.privateKey as unknown as bigint);
   const publicKey    = bigintToBytes32(keypair.publicKey as unknown as bigint);
   // getNkFromUtxoPrivateKey(privateKey: Uint8Array) → Uint8Array per documented API.
-  const viewingKeyNk = bigintToBytes32(getNkFromUtxoPrivateKey(keypair.privateKey) as unknown as bigint);
+  const viewingKeyNk = getNkFromUtxoPrivateKey(keypair.privateKey) as unknown as Uint8Array;
   return { privateKey, publicKey, viewingKeyNk };
 }
 
