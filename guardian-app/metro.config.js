@@ -23,7 +23,6 @@ config.resolver.extraNodeModules = {
 config.resolver.blockList = [
   /node_modules\/web-worker\/.*/,
   /node_modules\/ffjavascript\/.*/,
-  /node_modules\/snarkjs\/.*/,
 ];
 
 module.exports = config;
