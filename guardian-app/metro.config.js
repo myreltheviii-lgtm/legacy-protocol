@@ -13,6 +13,7 @@ config.resolver.extraNodeModules = {
   url: require.resolve("url"),
   readline: require.resolve("readline"),
   snarkjs: false,
+  circomlibjs: false,
 
   fastfile: false,
   circom_runtime: false,
@@ -21,7 +22,6 @@ config.resolver.extraNodeModules = {
 config.resolver.blockList = [
   /node_modules\/web-worker\/.*/,
   /node_modules\/ffjavascript\/.*/,
-  /node_modules\/circomlibjs\/.*/,
   /node_modules\/snarkjs\/.*/,
 ];
 
