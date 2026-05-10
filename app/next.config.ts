@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
     "@solana/wallet-adapter-solflare",
     "@legacy-protocol/sdk",
     "@legacy-protocol/cloak-integration",
+    "@cloak.dev/sdk",
+    "@cloak.dev/sdk-devnet",
   ],
 
   // Allow Next.js Image to serve optimised QR codes from the external
