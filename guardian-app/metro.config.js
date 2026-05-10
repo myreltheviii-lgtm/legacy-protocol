@@ -24,7 +24,6 @@ config.resolver.extraNodeModules = {
 
 config.resolver.blockList = [
   /node_modules\/web-worker\/.*/,
-  /node_modules\/circomlibjs\/node_modules\/ffjavascript\/build\/.*/,
 ];
 
 module.exports = config;
