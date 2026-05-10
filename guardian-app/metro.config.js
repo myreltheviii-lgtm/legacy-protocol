@@ -12,6 +12,7 @@ config.resolver.extraNodeModules = {
   os: require.resolve("os-browserify/browser"),
   url: require.resolve("url"),
   readline: false,
+  snarkjs: false,
   fastfile: false,
   circom_runtime: false,
 };
