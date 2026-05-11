@@ -2,6 +2,10 @@
 //
 // QVAC LLM-powered anomaly analysis for the watcher service.
 //
+// Migrated from @qvac/llm-llamacpp + @qvac/embed-llamacpp (deprecated) to
+// the unified @qvac/sdk package. The SDK runs natively on Node.js >= v22.17
+// without requiring a separate Bare runtime process.
+//
 // This module sits between the mathematical anomaly detection in anomaly.ts
 // and the on-chain flag submission. When isAnomalous() returns true, this
 // module evaluates whether the pattern represents genuine risk before any
@@ -16,48 +20,64 @@
 // security model wins absolutely.
 //
 // CRITICAL — completion() is NOT a Promise:
-//   const result = _llmHandle.completion({ ... }); // synchronous return
-//   const text   = await result.text;              // only .text is awaited
-//   Never: await _llmHandle.completion({ ... })    // this is wrong
+//   const result = completion({ ... })  // synchronous return
+//   const text   = await result.text    // only .text is awaited
+//   Never: await completion({ ... })    // this is wrong
 //
 // Four exports required by index.ts:
-//   prewarmQVACModels()         — download + load both LLM and embedder models
-//   initQVACAnomalyEngine()     — initialise persistent LLM handle after prewarm
-//   shutdownQVACAnomalyEngine() — unload LLM model, must run before closeQVACRagStore
+//   prewarmQVACModels()         — download + cache both LLM and embedder models
+//   initQVACAnomalyEngine()     — load persistent LLM model, store its ID
+//   shutdownQVACAnomalyEngine() — unload LLM model, clear ID
 //   analyzeVaultAnomaly()       — run LLM risk analysis, return QVACAnomalyResult
+//
+// buildVaultBehavior() is also exported and called directly by index.ts for
+// the RAG ingest loop — it is a pure function with no @qvac/sdk dependency.
 
-import LlmLlamacpp from "@qvac/llm-llamacpp";
-import GGMLBert from "@qvac/embed-llamacpp";
+import {
+  loadModel,
+  unloadModel,
+  completion,
+  LLAMA_3_2_1B_INST_Q4_0,
+  GTE_LARGE_FP16,
+} from "@qvac/sdk";
+
 import { SLOTS_PER_DAY, VaultInactivityState } from "./block_counter";
-import { VaultRecord }       from "../types/watcher";
-import { logger }            from "../logger";
+import { VaultRecord }                          from "../types/watcher";
+import { logger }                               from "../logger";
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Model configuration ───────────────────────────────────────────────────────
+//
+// Both models run CPU-only throughout. @qvac/sdk defaults device to "gpu"
+// and gpu_layers / gpuLayers to 99 — both must be explicitly overridden here.
+// These constants are defined once so a future change requires exactly one
+// edit per model type.
 
-const LLM_MODEL      = "LLAMA_3_2_1B_INST_Q4_0";
-const EMBEDDER_MODEL = "GTE_LARGE_FP16";
-
-// ctx_size: 2048 for watcher LLM — as specified. GPU forbidden throughout.
 const LLM_MODEL_CONFIG = {
-  device:    "cpu" as const,
-  ctx_size:  2048,
-  verbosity: 0,
+  ctx_size:   2048,     // context window — sufficient for anomaly prompts
+  device:     "cpu" as const,
+  gpu_layers: 0,        // override SDK default of 99
+  verbosity:  0,        // suppress llama.cpp log noise
 };
 
-// gpuLayers: 0 and device: "cpu" for embedder — GPU forbidden throughout.
+// EMBEDDER_MODEL_CONFIG is defined here and re-exported for prewarmQVACModels.
+// qvac_rag.ts uses its own copy so both files are self-contained.
 const EMBEDDER_MODEL_CONFIG = {
-  device: "cpu" as const,
-  gpu_layers: "0" as const,
+  device:    "cpu" as const,
+  gpuLayers: 0,         // override SDK default of 99
 };
 
 // ── QVAC Types ────────────────────────────────────────────────────────────────
 
 /**
  * Behavioral profile of a vault constructed from watcher state.
+ *
  * Contains only metadata derived from on-chain activity patterns.
  * Cloak cryptographic fields (utxoCommitment, privateKey, viewingKey)
  * are never present in this struct — behavioral proxy only.
- * isShielded is derived from depositedLamports === "0", not from utxoCommitment.
+ *
+ * isShielded is derived from depositedLamports === "0", not from
+ * utxoCommitment. The VaultRecord type has no utxoCommitment field by
+ * design; shielded detection is purely lamport-based throughout the watcher.
  */
 export interface VaultBehavior {
   /** Base58 vault address — for logging only, never injected into LLM prompt. */
@@ -91,37 +111,46 @@ export interface QVACAnomalyResult {
 }
 
 // ── Module state ──────────────────────────────────────────────────────────────
+//
+// @qvac/sdk identifies loaded models by a string ID returned from loadModel().
+// We hold the LLM model ID for the process lifetime to avoid repeated
+// load/unload overhead on every poll cycle. The embedder model ID is held
+// by qvac_rag.ts which owns the RAG store lifecycle.
 
-// Persistent LLM handle held for the lifetime of the watcher process.
-// Initialised by initQVACAnomalyEngine(), released by shutdownQVACAnomalyEngine().
-let _llmHandle: LlmLlamacpp | null = null;
-
-// Embedder handle used only during prewarmQVACModels() to pre-cache the model.
-// The RAG store manages its own embedder handle via qvac_rag.ts.
-let _prewarmEmbedderHandle: GGMLBert | null = null;
+let _llmModelId: string | null = null;
 
 // ── Prewarm ───────────────────────────────────────────────────────────────────
 
 /**
- * Downloads and pre-loads both the LLM and embedder models so they are
- * cached locally before the watcher begins processing poll cycles.
+ * Downloads and caches both the LLM and embedder models locally before the
+ * watcher begins processing poll cycles.
  *
  * Called once in main() after initSigningPool() and before the Solana
- * connection is opened. initQVACAnomalyEngine() and initQVACRagStore()
- * are called immediately after this returns.
+ * connection is opened. initQVACAnomalyEngine() and initQVACRagStore() are
+ * called immediately after this returns.
  *
- * Both models are unloaded after download so initQVACAnomalyEngine and
- * initQVACRagStore each load their own persistent handle cleanly.
+ * Each model is loaded then immediately unloaded. The sole purpose is to
+ * trigger @qvac/sdk's download-and-cache mechanism so that the subsequent
+ * loadModel() calls in initQVACAnomalyEngine() and initQVACRagStore()
+ * resolve from local disk instead of the network, keeping startup latency
+ * low when the watcher restarts after the initial download.
  */
 export async function prewarmQVACModels(): Promise<void> {
   logger.info("QVAC: prewarming LLM and embedder models — downloading to local cache");
 
-  const llm      = new LlmLlamacpp({ files: { model: [LLM_MODEL] }, config: LLM_MODEL_CONFIG });
-  const embedder = new GGMLBert({ files: { model: [EMBEDDER_MODEL] }, config: EMBEDDER_MODEL_CONFIG });
-  await llm.load();
-  await llm.unload();
-  await embedder.load();
-  await embedder.unload();
+  const llmId = await loadModel({
+    modelSrc:    LLAMA_3_2_1B_INST_Q4_0,
+    modelType:   "llm",
+    modelConfig: LLM_MODEL_CONFIG,
+  });
+  await unloadModel({ modelId: llmId });
+
+  const embedId = await loadModel({
+    modelSrc:    GTE_LARGE_FP16,
+    modelType:   "embeddings",
+    modelConfig: EMBEDDER_MODEL_CONFIG,
+  });
+  await unloadModel({ modelId: embedId });
 
   logger.info("QVAC: prewarm complete — both models cached locally");
 }
@@ -129,32 +158,43 @@ export async function prewarmQVACModels(): Promise<void> {
 // ── Init / shutdown ───────────────────────────────────────────────────────────
 
 /**
- * Initialises the persistent LLM handle used for all anomaly analysis calls.
+ * Loads the LLM model into memory and stores its ID for the process lifetime.
+ *
  * Called in main() after prewarmQVACModels() and before the first poll cycle.
- * The model stays loaded in RAM for the lifetime of the watcher process,
- * avoiding per-analysis load/unload overhead.
+ * The model stays loaded in RAM until shutdownQVACAnomalyEngine() is called,
+ * avoiding per-analysis load/unload overhead across thousands of poll cycles.
  */
 export async function initQVACAnomalyEngine(): Promise<void> {
   logger.info("QVAC: initialising anomaly LLM engine");
-  _llmHandle = new LlmLlamacpp({ files: { model: [LLM_MODEL] }, config: LLM_MODEL_CONFIG });
-  await _llmHandle.load();
-  logger.info("QVAC: anomaly LLM engine ready — model loaded");
+
+  _llmModelId = await loadModel({
+    modelSrc:    LLAMA_3_2_1B_INST_Q4_0,
+    modelType:   "llm",
+    modelConfig: LLM_MODEL_CONFIG,
+  });
+
+  logger.info({ modelId: _llmModelId }, "QVAC: anomaly LLM engine ready — model loaded");
 }
 
 /**
- * Unloads the LLM model and clears the handle.
+ * Unloads the LLM model and clears its ID.
+ *
  * Called first in shutdown(), before closeQVACRagStore() and getStore().close().
- * Shutdown order is absolute: QVAC unloads before the store closes.
+ * Shutdown order is absolute: LLM unloads first, embedder second, store last.
+ * close() — which releases the @qvac/sdk client itself — is called at the end
+ * of closeQVACRagStore() after both models have been unloaded.
  */
 export async function shutdownQVACAnomalyEngine(): Promise<void> {
-  if (!_llmHandle) return;
+  if (!_llmModelId) return;
+
   try {
-    await _llmHandle.unload();
+    await unloadModel({ modelId: _llmModelId });
     logger.info("QVAC: anomaly LLM engine unloaded cleanly");
   } catch (err) {
     logger.error({ err }, "QVAC: error unloading anomaly LLM engine — continuing shutdown");
   } finally {
-    _llmHandle = null;
+    // Always clear the ID so the module is in a clean state even on error.
+    _llmModelId = null;
   }
 }
 
@@ -162,41 +202,52 @@ export async function shutdownQVACAnomalyEngine(): Promise<void> {
 
 /**
  * Constructs a VaultBehavior from watcher state for a given vault.
+ *
  * This is the only place where VaultRecord and VaultInactivityState fields
- * are translated into the behavioral representation the LLM sees.
+ * are translated into the behavioral representation the LLM and embedder see.
+ * It is a pure function — no @qvac/sdk calls, no I/O, no side effects.
+ *
+ * Called from two places:
+ *   anomaly.ts  — during evaluateSingleAnomaly() before analyzeVaultAnomaly()
+ *   index.ts    — during the RAG ingest loop after evaluateAllAnomalies()
  *
  * isShielded is derived from depositedLamports === "0" — never from
- * utxoCommitment or any other Cloak field. The VaultRecord type has no
- * utxoCommitment field by design; shielded detection is purely lamport-based.
+ * utxoCommitment or any other Cloak field.
  *
  * similarTriggeredVaults is supplied by the caller from the RAG store result —
- * it is never hardcoded to 0. The RAG lookup always precedes this call.
+ * it is never hardcoded to 0. The RAG lookup always precedes this call in
+ * anomaly.ts; index.ts passes 0 explicitly for corpus ingest (the count is
+ * only meaningful during similarity query, not during ingestion).
  */
 export function buildVaultBehavior(
   vault:                  VaultRecord,
   state:                  VaultInactivityState,
   similarTriggeredVaults: number,
 ): VaultBehavior {
-  const slotsDayF         = Number(SLOTS_PER_DAY);
-  const currentSilenceDays    = Number(state.elapsedSlots) / slotsDayF;
+  const slotsDayF          = Number(SLOTS_PER_DAY);
+  const currentSilenceDays = Number(state.elapsedSlots) / slotsDayF;
 
   const checkinCount   = BigInt(vault.checkinCount);
   const sumOfIntervals = BigInt(vault.sumOfIntervals);
 
+  // Historical average in days. Zero when there is no check-in history so
+  // the LLM and the fallback logic both handle the no-history case cleanly.
   const historicalAverageDays =
     checkinCount > 0n && sumOfIntervals > 0n
       ? Number(sumOfIntervals / checkinCount) / slotsDayF
       : 0;
 
-  // Build a concise check-in history description for the LLM.
-  // Uses only aggregate behavioral data — no addresses or cryptographic values.
+  // Human-readable check-in history for the LLM prompt.
+  // Aggregate counts only — no addresses or cryptographic values.
   const checkInHistory =
     checkinCount === 0n
       ? "No check-in history recorded"
       : `${checkinCount.toString()} total check-ins recorded, ` +
         `average interval ${historicalAverageDays.toFixed(1)} days, ` +
         `current silence ${currentSilenceDays.toFixed(1)} days ` +
-        `(${historicalAverageDays > 0 ? (currentSilenceDays / historicalAverageDays).toFixed(2) : "N/A"}x average)`;
+        `(${historicalAverageDays > 0
+          ? (currentSilenceDays / historicalAverageDays).toFixed(2)
+          : "N/A"}x average)`;
 
   // Shielded detection: depositedLamports === "0" means the vault's SOL was
   // moved into the Cloak shielded pool. No Cloak fields are read here.
@@ -208,7 +259,8 @@ export function buildVaultBehavior(
     historicalAverageDays,
     checkInHistory,
     guardianCount:          vault.guardianCount,
-    guardiansSignedCount:   0, // watcher does not track live covenant signature counts
+    // watcher does not track live covenant signature counts — always 0
+    guardiansSignedCount:   0,
     isShielded,
     similarTriggeredVaults,
   };
@@ -218,7 +270,7 @@ export function buildVaultBehavior(
 
 /**
  * Runs LLM risk analysis on a vault's behavioral profile and returns a
- * structured QVACAnomalyResult that gates the on-chain flag submission.
+ * validated QVACAnomalyResult that gates the on-chain flag submission.
  *
  * shouldAlert: false → submitAnomalyFlag is not called, regardless of math.
  * shouldAlert: true  → submitAnomalyFlag proceeds.
@@ -227,9 +279,12 @@ export function buildVaultBehavior(
  * keys, UTXO commitments, vault addresses, or any Cloak data appear in it.
  *
  * Falls back deterministically on any LLM failure so the system never silently
- * drops a genuine anomaly due to LLM unavailability. Fallback logic:
- *   ratio > 1.5 (i.e. silence > 1.5× historical average) → shouldAlert true, MEDIUM
- *   ratio ≤ 1.5                                           → shouldAlert false, LOW
+ * drops a genuine anomaly due to LLM unavailability:
+ *   ratio > 1.5 → shouldAlert true,  riskLevel MEDIUM
+ *   ratio ≤ 1.5 → shouldAlert false, riskLevel LOW
+ *
+ * completion() returns a synchronous object — only result.text is awaited.
+ * Never await completion() itself.
  */
 export async function analyzeVaultAnomaly(
   vault:    VaultRecord,
@@ -238,10 +293,10 @@ export async function analyzeVaultAnomaly(
 ): Promise<QVACAnomalyResult> {
   const fallback = buildFallbackResult(behavior);
 
-  if (!_llmHandle) {
+  if (!_llmModelId) {
     logger.warn(
       { vault: vault.vaultAddress },
-      "QVAC: LLM handle not initialised — returning fallback anomaly result",
+      "QVAC: LLM model not loaded — returning fallback anomaly result",
     );
     return fallback;
   }
@@ -249,12 +304,18 @@ export async function analyzeVaultAnomaly(
   const prompt = buildAnomalyPrompt(behavior);
 
   try {
-    const llmRes = await _llmHandle.run(
-      [{ role: "user", content: prompt }],
-      { generationParams: { predict: 256, temp: 0.1 } },
-    );
-    const llmOut = await llmRes.await() as any;
-    const raw = typeof llmOut === "string" ? llmOut : (Array.isArray(llmOut) ? String(llmOut[llmOut.length - 1]) : String(llmOut));
+    // completion() is a synchronous call that returns a result object.
+    // Awaiting result.text collects the full generated string after the
+    // model finishes. stream: false is explicit — we need the complete
+    // JSON response before parsing, not a token stream.
+    const result = completion({
+      modelId:          _llmModelId,
+      history:          [{ role: "user", content: prompt }],
+      stream:           false,
+      generationParams: { temp: 0.1, predict: 256 },
+    });
+
+    const raw = await result.text;
 
     const parsed = parseQVACResponse(raw, fallback);
 
@@ -282,8 +343,11 @@ export async function analyzeVaultAnomaly(
 
 /**
  * Builds the LLM prompt from behavioral metadata only.
+ *
  * The vault address is never injected into the prompt text — it is used only
- * for logging. No cryptographic material of any kind appears here.
+ * for logging in the caller. No cryptographic material of any kind appears
+ * here. The prompt instructs the model to return raw JSON only so that
+ * parseQVACResponse() has a clean string to work with.
  */
 function buildAnomalyPrompt(behavior: VaultBehavior): string {
   const ratio = behavior.historicalAverageDays > 0
@@ -315,9 +379,13 @@ Rules:
 }
 
 /**
- * Parses and validates the raw LLM text response against the QVACAnomalyResult shape.
- * LLM output is always validated before shouldAlert is acted upon.
- * Returns fallback on any parse failure or shape mismatch.
+ * Parses and validates the raw LLM text response against QVACAnomalyResult.
+ *
+ * The model is instructed to return raw JSON but may emit markdown fences
+ * despite the prompt — these are stripped before parsing. Every field is
+ * type-checked and enum-validated before the result is returned. Returns
+ * fallback on any parse failure or shape mismatch so a malformed LLM response
+ * can never cause an unhandled exception upstream.
  */
 function parseQVACResponse(raw: string, fallback: QVACAnomalyResult): QVACAnomalyResult {
   try {
@@ -327,10 +395,10 @@ function parseQVACResponse(raw: string, fallback: QVACAnomalyResult): QVACAnomal
     const validLevels = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
 
     if (
-      typeof parsed.riskLevel      !== "string"          ||
+      typeof parsed.riskLevel       !== "string"         ||
       !validLevels.includes(parsed.riskLevel as string)  ||
-      typeof parsed.shouldAlert    !== "boolean"          ||
-      typeof parsed.reasoning      !== "string"           ||
+      typeof parsed.shouldAlert     !== "boolean"         ||
+      typeof parsed.reasoning       !== "string"          ||
       typeof parsed.confidenceScore !== "number"
     ) {
       logger.warn({ parsed }, "QVAC: LLM response failed shape validation — using fallback");
@@ -351,10 +419,12 @@ function parseQVACResponse(raw: string, fallback: QVACAnomalyResult): QVACAnomal
 
 /**
  * Deterministic fallback result used when the LLM is unavailable or returns
- * a malformed response. Ensures the system never silently drops a genuine
- * anomaly. Ratio > 1.5 means silence has exceeded 1.5× historical average,
- * which is the same threshold isAnomalous() uses — so shouldAlert matches the
- * mathematical determination when the LLM cannot provide its own assessment.
+ * a malformed response.
+ *
+ * Mirrors the same 1.5× threshold used by isAnomalous() in block_counter.ts
+ * so shouldAlert is consistent with the mathematical determination when the
+ * LLM cannot provide its own assessment. This ensures the system never
+ * silently drops a genuine anomaly due to LLM unavailability.
  */
 function buildFallbackResult(behavior: VaultBehavior): QVACAnomalyResult {
   const ratio = behavior.historicalAverageDays > 0
@@ -364,9 +434,9 @@ function buildFallbackResult(behavior: VaultBehavior): QVACAnomalyResult {
   const shouldAlert = ratio > 1.5;
 
   return {
-    riskLevel:       shouldAlert ? "MEDIUM" : "LOW",
+    riskLevel:  shouldAlert ? "MEDIUM" : "LOW",
     shouldAlert,
-    reasoning:       shouldAlert
+    reasoning:  shouldAlert
       ? `Fallback: silence ${behavior.currentSilenceDays.toFixed(1)}d exceeds 1.5× historical average ${behavior.historicalAverageDays.toFixed(1)}d`
       : `Fallback: silence ${behavior.currentSilenceDays.toFixed(1)}d within normal range`,
     confidenceScore: 0.5,
