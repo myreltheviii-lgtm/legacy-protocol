@@ -1,0 +1,20 @@
+{
+  "https": "bare-node-https",
+  "http": "bare-node-http",
+  "crypto": "bare-node-crypto",
+  "buffer": "bare-node-buffer",
+  "path": "bare-node-path",
+  "os": "bare-node-os",
+  "util": "bare-node-util",
+  "stream": "bare-node-stream",
+  "events": "bare-node-events",
+  "worker_threads": "bare-node-worker-threads",
+  "fs": "bare-fs",
+  "net": "bare-net",
+  "tls": "bare-tls",
+  "zlib": "bare-zlib",
+  "url": "bare-url",
+  "assert": "bare-node-assert",
+  "punycode": "bare-node-punycode",
+  "readline": "bare-readline"
+}
