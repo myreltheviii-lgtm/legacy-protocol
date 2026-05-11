@@ -14,7 +14,7 @@ import { pingWorklet } from "./cloak-bridge";
 // Metro treats .bundle files as static assets because we added
 // "bundle" to assetExts in metro.config.js. It does NOT parse this file.
 // All Cloak/ZK code is inside it, invisible to the Metro bundler.
-import bundle from "../signing-service/app.bundle";
+import bundle from "../../signing-service/app.bundle";
 
 let worklet: InstanceType<typeof Worklet> | null = null;
 
