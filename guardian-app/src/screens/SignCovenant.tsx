@@ -17,94 +17,82 @@
 // Security invariants:
 //   Private key bytes are zeroed immediately after use in every code path.
 //   No private key appears in logs, state, or UI.
-//   Cloak externalAmount is always 0n for shield-to-shield transfers
-//   (enforced inside reconstructAndTransfer in cloak-integration).
-//   The guardian's Solana keypair bytes are zeroed from state after use.
+//   The guardian's Solana keypair is constructed and zeroed inside the worklet —
+//   it never exists as a Keypair object in the RN JS heap.
 //   walletKeyRef holds the base58 private key string in a mutable ref —
 //   NOT in React state — so it does not live in the component state tree,
 //   is not captured in React snapshots or DevTools state, and is cleared
 //   immediately after use in every code path including failures.
 //
-// Static import: Metro (React Native bundler) does not reliably handle
-// dynamic import() expressions. The cloak-integration package is imported
-// at module load time via a standard top-level import.
-//
-// Floating Promise fix: all async onPress handlers are wrapped with void
-// or explicit .catch(() => {}) so no Promise is left unattached. Since
-// each handler handles errors internally, the void wrapper is idiomatic.
+// Metro safety: zero Cloak imports in this file.
+// All Cloak calls go through cloak-bridge.ts → Bare worklet.
 
-import React, { useState, useRef }             from "react";
+import React, { useState, useRef }            from "react";
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, SafeAreaView, StatusBar, Alert,
 } from "react-native";
-import type { NativeStackScreenProps }    from "@react-navigation/native-stack";
-import { Keypair }                        from "@solana/web3.js";
-import { LoadingOverlay }                 from "../components/LoadingOverlay";
+import type { NativeStackScreenProps }   from "@react-navigation/native-stack";
+import { LoadingOverlay }                from "../components/LoadingOverlay";
 import { Colors, Typography, Spacing, Radius } from "../theme";
-import type { RootStackParamList }        from "../navigation/AppNavigator";
-import { connection }                     from "../lib/sdk";
-
-// Static import — Metro cannot reliably handle dynamic import() for packages.
+import type { RootStackParamList }       from "../navigation/AppNavigator";
+import { connectionUrl }                 from "../lib/sdk";
 import {
   scanOwnerUtxos,
   reconstructAndTransfer,
-} from "@legacy-protocol/cloak-integration";
-import type { GuardianShare }             from "@legacy-protocol/cloak-integration";
-import { decodeShareBase64, reconstructSecret, hexToUtxoPubkey } from "@legacy-protocol/sdk";
+  testReconstruction,
+} from "../lib/cloak-bridge";
+import type { GuardianShare }            from "../lib/cloak-bridge";
 
 type Props = NativeStackScreenProps<RootStackParamList, "SignCovenant">;
 
 type Phase =
-  | "entry"       // Guardian entering shares and wallet key
-  | "scanning"    // Scanning shielded pool for owner UTXOs
-  | "confirm"     // Showing scan results, awaiting guardian confirm
-  | "executing"   // Executing the Cloak transfer
-  | "done"        // Transfer confirmed
-  | "error";      // Any failure
+  | "entry"
+  | "scanning"
+  | "confirm"
+  | "executing"
+  | "done"
+  | "error";
 
 export function SignCovenant({ navigation, route }: Props) {
   const { vault } = route.params;
 
-  const [phase,            setPhase]         = useState<Phase>("entry");
-  const [shareInput,       setShareInput]    = useState("");
-  const [additionalShares, setAdditional]    = useState<string[]>([""]);
-  const [statusMessage,    setStatus]        = useState("");
-  const [errorMessage,     setErrorMessage]  = useState("");
-  const [scanResult,       setScanResult]    = useState<{
-    vaultUtxos: unknown[];
+  const [phase,            setPhase]        = useState<Phase>("entry");
+  const [shareInput,       setShareInput]   = useState("");
+  const [additionalShares, setAdditional]   = useState<string[]>([""]);
+  const [statusMessage,    setStatus]       = useState("");
+  const [errorMessage,     setErrorMessage] = useState("");
+  const [scanResult,       setScanResult]   = useState<{
+    vaultUtxos:  unknown[];
     totalAmount: bigint;
   } | null>(null);
 
-  // The guardian wallet private key (base58) is held in a mutable ref — NOT
-  // in React state — so it never appears in the component state tree, React
-  // DevTools snapshots, or memory dumps of the state tree. It is cleared in
-  // the finally block of executeTransfer() covering every code path.
-  // walletKeyClearCounter forces the uncontrolled TextInput to remount and
-  // visually clear after each use without holding the key value in state.
+  // The guardian wallet private key (base58) is held in a mutable ref —
+  // NOT in React state — so it never appears in the component state tree,
+  // React DevTools snapshots, or memory dumps of the state tree.
+  // It is sent to the worklet and cleared in the finally block of
+  // executeTransfer() covering every code path.
+  // walletKeyClearCounter forces the uncontrolled TextInput to remount
+  // and visually clear after each use without holding the key in state.
   const walletKeyRef = useRef("");
   const [walletKeyClearCounter, setWalletKeyClearCounter] = useState(0);
 
   const handleAddShareField = () => {
-    setAdditional((prev) => [...prev, ""]);
+    setAdditional(prev => [...prev, ""]);
   };
 
   const handleShareChange = (index: number, value: string) => {
-    setAdditional((prev) => {
+    setAdditional(prev => {
       const next = [...prev];
       next[index] = value;
       return next;
     });
   };
 
-  // Collects all share strings entered by the guardian and produces
-  // GuardianShare objects. shareIndex is 1-based position; guardianWallet
-  // is not needed by scanOwnerUtxos or reconstructAndTransfer (only shareBase64
-  // is used for GF(256) Lagrange interpolation).
   function buildGuardianShares(): GuardianShare[] {
     const allStrings = [
       shareInput.trim(),
-      ...additionalShares.map((s) => s.trim()).filter(Boolean),
+      ...additionalShares.map(s => s.trim()).filter(Boolean),
     ].filter(Boolean);
 
     return allStrings.map((shareBase64, i) => ({
@@ -122,30 +110,25 @@ export function SignCovenant({ navigation, route }: Props) {
 
     const allShareStrings = [
       shareInput.trim(),
-      ...additionalShares.map((s) => s.trim()).filter(Boolean),
+      ...additionalShares.map(s => s.trim()).filter(Boolean),
     ];
 
     if (allShareStrings.length < vault.mOfNThreshold) {
       setStatus(
         `Need at least ${vault.mOfNThreshold} shares to reconstruct. ` +
-        `You have ${allShareStrings.length}.`,
+        `You have ${allShareStrings.length}.`
       );
       return;
     }
 
-    let reconstructed: Uint8Array | null = null;
-
     try {
-      const shares = allShareStrings.map((s) => decodeShareBase64(s));
-      reconstructed = reconstructSecret(shares);
-
-      // Zero immediately — the test only checks share consistency.
-      reconstructed.fill(0);
-      reconstructed = null;
-
-      setStatus(`Reconstruction succeeded with ${allShareStrings.length} shares. Shares are consistent.`);
+      // Reconstruction happens inside the worklet.
+      // The reconstructed key is zeroed there — never exists in RN heap.
+      await testReconstruction({ shareStrings: allShareStrings });
+      setStatus(
+        `Reconstruction succeeded with ${allShareStrings.length} shares. Shares are consistent.`
+      );
     } catch (err) {
-      if (reconstructed) { reconstructed.fill(0); reconstructed = null; }
       Alert.alert(
         "Reconstruction failed",
         err instanceof Error ? err.message : String(err),
@@ -179,10 +162,10 @@ export function SignCovenant({ navigation, route }: Props) {
     setStatus("Scanning shielded pool for vault UTXOs…");
 
     try {
-      // scanOwnerUtxos reconstructs the owner key internally, derives the
-      // viewing key, scans the Cloak pool, then zeroes the key in its own
-      // finally block. No private key bytes leave cloak-integration.
-      const result = await scanOwnerUtxos({ guardianShares: shares, connection });
+      const result = await scanOwnerUtxos({
+        guardianShares: shares,
+        connectionUrl,
+      });
       setScanResult(result);
       setStatus("");
       setPhase("confirm");
@@ -203,8 +186,6 @@ export function SignCovenant({ navigation, route }: Props) {
         {
           text: "Execute",
           style: "destructive",
-          // void satisfies the floating-Promise rule. executeTransfer handles
-          // all errors internally and never propagates a rejection.
           onPress: () => { void executeTransfer(); },
         },
       ],
@@ -217,50 +198,17 @@ export function SignCovenant({ navigation, route }: Props) {
     setPhase("executing");
     setStatus("Executing Cloak shielded transfer…");
 
-    // The guardian wallet keypair is used only as the Solana transaction signer
-    // (relayerWallet) — it pays fees and signs the on-chain Cloak record
-    // transaction. It is NOT the UTXO spending key; the ZK proof is generated
-    // from the owner's reconstructed key inside cloak-integration.
-    let guardianKeypair: Keypair | null = null;
-
     try {
-      // Parse the guardian's Solana private key from the ref (not state).
-      // Keypair.fromSecretKey accepts a 64-byte seed (32-byte secret + 32-byte public).
-      // @solana/web3.js uses the bs58 transitive dependency for base58 decoding.
-      const rawKey = Buffer.from(
-        require("bs58").decode(walletKeyRef.current.trim()),
-      );
-      guardianKeypair = Keypair.fromSecretKey(rawKey);
-
-      const shares = buildGuardianShares();
-
-      // beneficiaryUtxoPubkey is the 32-byte UTXO public key stored on-chain
-      // at vault.beneficiary (watcher hex string → Uint8Array).
-      // This is NOT vault.ownerAddress — the owner is the Solana wallet that
-      // owns the vault PDA, not the UTXO beneficiary key.
-      const beneficiaryUtxoPubkey = hexToUtxoPubkey(vault.beneficiary);
-
-      // reconstructAndTransfer reconstructs the owner key internally from
-      // guardianShares, generates the ZK nullifier, executes the shield-to-shield
-      // transfer (externalAmount: 0n — zero public trace), and zeroes the key
-      // in its own finally block.
+      // The private key is passed to the worklet over loopback.
+      // The worklet constructs the Keypair, signs, and zeroes it internally.
+      // The key never exists as a Keypair object in the RN JS heap.
       await reconstructAndTransfer({
-        guardianShares:        shares,
-        beneficiaryUtxoPubkey,
-        vaultUtxos:            scanResult.vaultUtxos,
-        totalAmount:           scanResult.totalAmount,
-        relayerWallet: {
-          publicKey:       guardianKeypair.publicKey,
-          signTransaction: async (tx) => {
-            if (!guardianKeypair) throw new Error("Keypair already zeroed");
-            // Sign using the guardian keypair directly.
-            if ("sign" in tx && typeof (tx as any).sign === "function") {
-              (tx as any).sign([guardianKeypair]);
-            }
-            return tx;
-          },
-        },
-        connection,
+        guardianShares:           buildGuardianShares(),
+        beneficiaryUtxoPubkeyHex: vault.beneficiary,
+        vaultUtxos:               scanResult.vaultUtxos,
+        totalAmount:              scanResult.totalAmount,
+        relayerPrivateKeyBase58:  walletKeyRef.current.trim(),
+        connectionUrl,
       });
 
       setStatus("Cloak shielded transfer submitted successfully.");
@@ -269,15 +217,10 @@ export function SignCovenant({ navigation, route }: Props) {
       setErrorMessage(err instanceof Error ? err.message : String(err));
       setPhase("error");
     } finally {
-      // Zero the guardian keypair secret bytes from memory regardless of outcome.
-      if (guardianKeypair) {
-        (guardianKeypair as any)._keypair?.secretKey?.fill(0);
-        guardianKeypair = null;
-      }
-      // Clear the private key ref so the raw base58 string does not persist
-      // in memory after use. Force-remount the TextInput so it visually clears.
+      // Clear the private key ref regardless of outcome.
+      // Force-remount the TextInput so it visually clears.
       walletKeyRef.current = "";
-      setWalletKeyClearCounter((c) => c + 1);
+      setWalletKeyClearCounter(c => c + 1);
     }
   };
 
@@ -336,7 +279,6 @@ export function SignCovenant({ navigation, route }: Props) {
         {/* Entry phase inputs */}
         {(phase === "entry" || phase === "confirm") && (
           <>
-            {/* Share entry */}
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>YOUR SHAMIR SHARE</Text>
               <TextInput
@@ -353,7 +295,6 @@ export function SignCovenant({ navigation, route }: Props) {
               />
             </View>
 
-            {/* Additional shares */}
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>ADDITIONAL SHARES (for threshold)</Text>
               {additionalShares.map((share, i) => (
@@ -361,7 +302,7 @@ export function SignCovenant({ navigation, route }: Props) {
                   key={i}
                   style={[styles.input, { marginTop: i > 0 ? Spacing.xs : 0 }]}
                   value={share}
-                  onChangeText={(v) => handleShareChange(i, v)}
+                  onChangeText={v => handleShareChange(i, v)}
                   placeholder={`Share ${i + 2}`}
                   placeholderTextColor={Colors.textDim}
                   autoCapitalize="none"
@@ -373,12 +314,6 @@ export function SignCovenant({ navigation, route }: Props) {
               </TouchableOpacity>
             </View>
 
-            {/* Guardian wallet key — needed to sign the Solana transfer transaction.
-                Stored in a ref (not React state) so the base58 private key string
-                never lives in the component state tree. The TextInput is uncontrolled:
-                onChangeText writes directly to walletKeyRef without triggering a
-                re-render or state update. walletKeyClearCounter is incremented in
-                the finally block to force a remount and visually clear the field. */}
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>GUARDIAN WALLET KEY (base58)</Text>
               <Text style={styles.sectionHint}>
@@ -387,7 +322,7 @@ export function SignCovenant({ navigation, route }: Props) {
               <TextInput
                 key={walletKeyClearCounter}
                 style={styles.input}
-                onChangeText={(v) => { walletKeyRef.current = v; }}
+                onChangeText={v => { walletKeyRef.current = v; }}
                 placeholder="Paste your base58 private key"
                 placeholderTextColor={Colors.textDim}
                 autoCapitalize="none"
@@ -409,10 +344,7 @@ export function SignCovenant({ navigation, route }: Props) {
         {phase === "done" ? (
           <View style={styles.successBox}>
             <Text style={styles.successText}>✓ Inheritance transfer executed successfully.</Text>
-            <TouchableOpacity
-              style={styles.doneBtn}
-              onPress={() => navigation.popToTop()}
-            >
+            <TouchableOpacity style={styles.doneBtn} onPress={() => navigation.popToTop()}>
               <Text style={styles.doneBtnText}>Return to Dashboard</Text>
             </TouchableOpacity>
           </View>
@@ -445,7 +377,7 @@ export function SignCovenant({ navigation, route }: Props) {
               style={styles.executeBtn}
               onPress={() => { void handleScan(); }}
             >
-              <Text style={styles.executeBtnText}>Scan &amp; Confirm</Text>
+              <Text style={styles.executeBtnText}>Scan & Confirm</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -458,10 +390,7 @@ export function SignCovenant({ navigation, route }: Props) {
             >
               <Text style={styles.testBtnText}>Back</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.executeBtn}
-              onPress={handleExecute}
-            >
+            <TouchableOpacity style={styles.executeBtn} onPress={handleExecute}>
               <Text style={styles.executeBtnText}>Execute Inheritance</Text>
             </TouchableOpacity>
           </View>
@@ -473,170 +402,42 @@ export function SignCovenant({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex:            1,
-    backgroundColor: Colors.background,
-  },
-  header: {
-    flexDirection:  "row",
-    alignItems:     "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical:   Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  backBtn: { width: 80, padding: Spacing.xs },
-  backText: { ...Typography.body, color: Colors.accent },
-  headerTitle: { ...Typography.heading3 },
-  scroll: {
-    padding: Spacing.lg,
-    gap:     Spacing.md,
-  },
-  contextCard: {
-    backgroundColor: Colors.surface,
-    borderRadius:    Radius.md,
-    borderWidth:     1,
-    borderColor:     Colors.border,
-    padding:         Spacing.md,
-    gap:             Spacing.xs,
-  },
-  label: { ...Typography.label },
-  mono:  { ...Typography.mono, fontSize: 11, color: Colors.textPrimary },
-  meta:  { ...Typography.bodySmall },
-  warningCard: {
-    backgroundColor: Colors.CRITICAL + "11",
-    borderRadius:    Radius.md,
-    borderWidth:     1,
-    borderColor:     Colors.CRITICAL,
-    padding:         Spacing.md,
-  },
-  warningText: {
-    ...Typography.body,
-    color:     Colors.CRITICAL,
-    lineHeight: 20,
-  },
-  scanResultCard: {
-    backgroundColor: Colors.GREEN + "11",
-    borderRadius:    Radius.md,
-    borderWidth:     1,
-    borderColor:     Colors.GREEN,
-    padding:         Spacing.md,
-    gap:             Spacing.xs,
-  },
-  scanResultTitle: {
-    ...Typography.label,
-    color: Colors.GREEN,
-  },
-  scanResultBody: {
-    ...Typography.body,
-    color: Colors.textPrimary,
-  },
-  scanResultNote: {
-    ...Typography.bodySmall,
-    color: Colors.textMuted,
-  },
-  section: {
-    gap: Spacing.xs,
-  },
-  sectionLabel: { ...Typography.label },
-  sectionHint: {
-    ...Typography.bodySmall,
-    color: Colors.textMuted,
-  },
-  input: {
-    backgroundColor:   Colors.surface,
-    borderRadius:      Radius.md,
-    borderWidth:       1,
-    borderColor:       Colors.border,
-    color:             Colors.textPrimary,
-    fontFamily:        "monospace",
-    fontSize:          12,
-    padding:           Spacing.md,
-    textAlignVertical: "top",
-  },
-  addShareBtn: {
-    alignSelf: "flex-start",
-    marginTop: Spacing.xs,
-    padding:   Spacing.xs,
-  },
-  addShareText: {
-    ...Typography.body,
-    color: Colors.accent,
-  },
-  statusBox: {
-    backgroundColor: Colors.surface,
-    borderRadius:    Radius.md,
-    borderWidth:     1,
-    borderColor:     Colors.border,
-    padding:         Spacing.md,
-  },
-  statusText: {
-    ...Typography.body,
-    color: Colors.textMuted,
-  },
-  successBox: {
-    backgroundColor: Colors.GREEN + "18",
-    borderRadius:    Radius.md,
-    borderWidth:     1,
-    borderColor:     Colors.GREEN,
-    padding:         Spacing.md,
-    gap:             Spacing.md,
-    alignItems:      "center",
-  },
-  successText: {
-    ...Typography.body,
-    color: Colors.GREEN,
-  },
-  doneBtn: {
-    backgroundColor: Colors.GREEN,
-    borderRadius:    Radius.md,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical:   Spacing.sm,
-  },
-  doneBtnText: {
-    ...Typography.heading3,
-    color: Colors.background,
-  },
-  errorBox: {
-    backgroundColor: Colors.CRITICAL + "18",
-    borderRadius:    Radius.md,
-    borderWidth:     1,
-    borderColor:     Colors.CRITICAL,
-    padding:         Spacing.md,
-    gap:             Spacing.sm,
-  },
-  errorTitle: { ...Typography.heading3, color: Colors.CRITICAL },
-  errorBody:  { ...Typography.bodySmall, color: Colors.CRITICAL },
-  retryBtn: {
-    alignSelf:    "flex-start",
-    padding:      Spacing.sm,
-    borderRadius: Radius.sm,
-    borderWidth:  1,
-    borderColor:  Colors.CRITICAL,
-  },
-  retryText: { ...Typography.body, color: Colors.CRITICAL },
-  actions: {
-    gap:       Spacing.sm,
-    marginTop: Spacing.sm,
-  },
-  testBtn: {
-    backgroundColor: Colors.surface,
-    borderRadius:    Radius.md,
-    borderWidth:     1,
-    borderColor:     Colors.border,
-    padding:         Spacing.md,
-    alignItems:      "center",
-  },
-  testBtnText: { ...Typography.heading3 },
-  executeBtn: {
-    backgroundColor: Colors.accent,
-    borderRadius:    Radius.md,
-    padding:         Spacing.md,
-    alignItems:      "center",
-  },
-  executeBtnText: {
-    ...Typography.heading3,
-    color: Colors.background,
-  },
+  safe:            { flex: 1, backgroundColor: Colors.background },
+  header:          { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  backBtn:         { width: 80, padding: Spacing.xs },
+  backText:        { ...Typography.body, color: Colors.accent },
+  headerTitle:     { ...Typography.heading3 },
+  scroll:          { padding: Spacing.lg, gap: Spacing.md },
+  contextCard:     { backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, padding: Spacing.md, gap: Spacing.xs },
+  label:           { ...Typography.label },
+  mono:            { ...Typography.mono, fontSize: 11, color: Colors.textPrimary },
+  meta:            { ...Typography.bodySmall },
+  warningCard:     { backgroundColor: Colors.CRITICAL + "11", borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.CRITICAL, padding: Spacing.md },
+  warningText:     { ...Typography.body, color: Colors.CRITICAL, lineHeight: 20 },
+  scanResultCard:  { backgroundColor: Colors.GREEN + "11", borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.GREEN, padding: Spacing.md, gap: Spacing.xs },
+  scanResultTitle: { ...Typography.label, color: Colors.GREEN },
+  scanResultBody:  { ...Typography.body, color: Colors.textPrimary },
+  scanResultNote:  { ...Typography.bodySmall, color: Colors.textMuted },
+  section:         { gap: Spacing.xs },
+  sectionLabel:    { ...Typography.label },
+  sectionHint:     { ...Typography.bodySmall, color: Colors.textMuted },
+  input:           { backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, color: Colors.textPrimary, fontFamily: "monospace", fontSize: 12, padding: Spacing.md, textAlignVertical: "top" },
+  addShareBtn:     { alignSelf: "flex-start", marginTop: Spacing.xs, padding: Spacing.xs },
+  addShareText:    { ...Typography.body, color: Colors.accent },
+  statusBox:       { backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, padding: Spacing.md },
+  statusText:      { ...Typography.body, color: Colors.textMuted },
+  successBox:      { backgroundColor: Colors.GREEN + "18", borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.GREEN, padding: Spacing.md, gap: Spacing.md, alignItems: "center" },
+  successText:     { ...Typography.body, color: Colors.GREEN },
+  doneBtn:         { backgroundColor: Colors.GREEN, borderRadius: Radius.md, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
+  doneBtnText:     { ...Typography.heading3, color: Colors.background },
+  errorBox:        { backgroundColor: Colors.CRITICAL + "18", borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.CRITICAL, padding: Spacing.md, gap: Spacing.sm },
+  errorTitle:      { ...Typography.heading3, color: Colors.CRITICAL },
+  errorBody:       { ...Typography.bodySmall, color: Colors.CRITICAL },
+  retryBtn:        { alignSelf: "flex-start", padding: Spacing.sm, borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.CRITICAL },
+  retryText:       { ...Typography.body, color: Colors.CRITICAL },
+  actions:         { gap: Spacing.sm, marginTop: Spacing.sm },
+  testBtn:         { backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, padding: Spacing.md, alignItems: "center" },
+  testBtnText:     { ...Typography.heading3 },
+  executeBtn:      { backgroundColor: Colors.accent, borderRadius: Radius.md, padding: Spacing.md, alignItems: "center" },
+  executeBtnText:  { ...Typography.heading3, color: Colors.background },
 });

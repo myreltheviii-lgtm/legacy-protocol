@@ -24,3 +24,8 @@ if (!_rpcEndpoint) {
 }
 
 export const connection = new Connection(_rpcEndpoint, { commitment: "confirmed" });
+
+// Exported as a plain string for the signing-service worklet.
+// The worklet runs in Bare and constructs its own Connection instance —
+// Connection objects cannot cross the IPC boundary.
+export const connectionUrl: string = connection.rpcEndpoint;

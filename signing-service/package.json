@@ -1,0 +1,27 @@
+{
+  "name": "signing-service",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "build": "bare-pack index.js -o app.bundle"
+  },
+  "dependencies": {
+    "@legacy-protocol/cloak-integration": "^1.0.0",
+    "@legacy-protocol/sdk": "^0.3.1",
+    "@solana/web3.js": "^1.91.8",
+    "bs58": "*",
+    "worker_threads": "npm:bare-node-worker-threads",
+    "http":           "npm:bare-node-http",
+    "crypto":         "npm:bare-node-crypto",
+    "events":         "npm:bare-node-events",
+    "buffer":         "npm:bare-node-buffer",
+    "path":           "npm:bare-node-path",
+    "os":             "npm:bare-node-os",
+    "util":           "npm:bare-node-util",
+    "stream":         "npm:bare-node-stream"
+  },
+  "devDependencies": {
+    "bare-pack": "^1.5.1"
+  }
+}

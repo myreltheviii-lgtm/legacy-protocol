@@ -10,8 +10,6 @@
   },
   "dependencies": {
     "@expo/vector-icons": "^14.0.0",
-    "@legacy-protocol/cloak-integration": "^1.0.0",
-    "@legacy-protocol/sdk": "^0.3.1",
     "@qvac/cli": "^0.3.0",
     "@qvac/sdk": "*",
     "@react-navigation/native": "^7.2.4",
@@ -50,7 +48,6 @@
     "expo-device": "~8.0.10",
     "expo-file-system": "~19.0.22",
     "expo-status-bar": "~3.0.9",
-    "ffjavascript": "^0.3.1",
     "https-browserify": "^1.0.0",
     "hyperdb": "^6.7.0",
     "hyperdrive": "^13.3.2",
@@ -69,8 +66,7 @@
     "stream-browserify": "^3.0.0",
     "stream-http": "^3.2.0",
     "tar-stream": "^3.2.0",
-    "url": "^0.11.4",
-    "web-worker": "^1.5.0"
+    "url": "^0.11.4"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
