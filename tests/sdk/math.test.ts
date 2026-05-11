@@ -1,3 +1,16 @@
+// tests/sdk/math.test.ts
+//
+// Tests for the SDK math module and all exported protocol constants.
+// Framework: Jest.
+//
+// Import paths:
+//   - Math functions: sdk/src/math.ts
+//   - ActivityZone enum: sdk/src/types.ts
+//   - Exported constants: sdk/src/index.ts (barrel re-exports from index)
+//   - Non-exported constants (ANOMALY_MULTIPLIER_PCT, WARNING_SLOT_PCT_75,
+//     WARNING_SLOT_PCT_90, MAX_COVENANT_SIGNERS) are not exposed by the SDK.
+//     They are hardcoded below from constants.rs (authoritative source of truth).
+
 import {
   computeInactivityScore,
   classifyZone,
@@ -6,7 +19,10 @@ import {
   isAnomalous,
   computeVaultInactivityState,
   estimateSecondsToTrigger,
-  ActivityZone,
+} from "../../sdk/src/math";
+import { ActivityZone } from "../../sdk/src/types";
+import type { VaultAccount } from "../../sdk/src/types";
+import {
   DEFAULT_INACTIVITY_THRESHOLD_SLOTS,
   MIN_INACTIVITY_THRESHOLD_SLOTS,
   MAX_INACTIVITY_THRESHOLD_SLOTS,
@@ -14,12 +30,52 @@ import {
   BENEFICIARY_CHANGE_TIMELOCK_SLOTS,
   EMERGENCY_SWEEP_TIMELOCK_SLOTS,
   GUARDIAN_REMOVAL_COVENANT_TIMELOCK_SLOTS,
-  ANOMALY_MULTIPLIER_PCT,
-  WARNING_SLOT_PCT_75,
-  WARNING_SLOT_PCT_90,
   MAX_GUARDIANS,
-  MAX_COVENANT_SIGNERS,
-} from "../../sdk/src/math";
+} from "../../sdk/src";
+
+// Constants mirrored from constants.rs that are NOT exported by the SDK barrel.
+// Hardcoded here against the authoritative values from the prompt.
+const ANOMALY_MULTIPLIER_PCT   = 150n;
+const WARNING_SLOT_PCT_75      = 75n;
+const WARNING_SLOT_PCT_90      = 90n;
+const MAX_COVENANT_SIGNERS     = 10;
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Builds a minimal valid VaultAccount for computeVaultInactivityState tests.
+ * All fields required by the v2 VaultAccount interface are provided.
+ * NOTE: v2 removed the `beneficiary` Pubkey field — only beneficiaryUtxoPubkey
+ * (hex string) exists. Including a `beneficiary` field here would be a V1
+ * remnant and must not be present.
+ */
+function makeVaultAccount(
+  lastCheckInSlot:          bigint,
+  inactivityThresholdSlots: bigint,
+): VaultAccount {
+  return {
+    owner:                    "11111111111111111111111111111112",
+    beneficiaryUtxoPubkey:    "0".repeat(64),
+    guardianCount:            0,
+    mOfNThreshold:            0,
+    inactivityThresholdSlots,
+    lastCheckInSlot,
+    createdSlot:              0n,
+    depositedLamports:        0n,
+    covenantCounter:          0n,
+    vaultIndex:               0n,
+    utxoCommitment:           "0".repeat(64),
+    utxoLeafIndex:            0n,
+    isTriggered:              false,
+    isClaimed:                false,
+    isEmergencySwept:         false,
+    warning75Sent:            false,
+    warning90Sent:            false,
+    bump:                     255,
+  };
+}
+
+// ── Protocol constants ─────────────────────────────────────────────────────
 
 describe("protocol constants match constants.rs exactly", () => {
   it("DEFAULT_INACTIVITY_THRESHOLD_SLOTS = 5_000_000", () => {
@@ -71,6 +127,8 @@ describe("protocol constants match constants.rs exactly", () => {
   });
 });
 
+// ── computeInactivityScore ─────────────────────────────────────────────────
+
 describe("computeInactivityScore — multiply-before-divide, BigInt only", () => {
   it("returns 0 for zero elapsed", () => {
     expect(computeInactivityScore(1000n, 1000n, 5_000_000n)).toBe(0n);
@@ -80,8 +138,9 @@ describe("computeInactivityScore — multiply-before-divide, BigInt only", () =>
     expect(computeInactivityScore(500n, 1000n, 5_000_000n)).toBe(0n);
   });
 
-  it("returns 0 for zero threshold", () => {
+  it("returns 0 for zero threshold — no divide-by-zero", () => {
     expect(computeInactivityScore(1000n, 0n, 0n)).toBe(0n);
+    expect(computeInactivityScore(0n, 0n, 0n)).toBe(0n);
   });
 
   it("exactly 75% threshold = 75", () => {
@@ -134,6 +193,8 @@ describe("computeInactivityScore — multiply-before-divide, BigInt only", () =>
     expect(computeInactivityScore(current, lastCheckIn, threshold)).toBe(50n);
   });
 });
+
+// ── classifyZone ───────────────────────────────────────────────────────────
 
 describe("classifyZone — all 4 zones with all boundary values", () => {
   it("0 is Green", () => {
@@ -189,6 +250,8 @@ describe("classifyZone — all 4 zones with all boundary values", () => {
   });
 });
 
+// ── computeMilestones ──────────────────────────────────────────────────────
+
 describe("computeMilestones — all 3 milestones correct", () => {
   it("warning75Slot = lastCheckIn + threshold*75/100", () => {
     const m = computeMilestones(0n, 1_000_000n);
@@ -230,6 +293,8 @@ describe("computeMilestones — all 3 milestones correct", () => {
   });
 });
 
+// ── thresholdCrossed ───────────────────────────────────────────────────────
+
 describe("thresholdCrossed — exact slot boundary verified", () => {
   it("true at exactly last_check_in + threshold", () => {
     expect(thresholdCrossed(5_000_000n, 0n, 5_000_000n)).toBe(true);
@@ -257,6 +322,8 @@ describe("thresholdCrossed — exact slot boundary verified", () => {
   });
 });
 
+// ── isAnomalous ────────────────────────────────────────────────────────────
+
 describe("isAnomalous — true/false boundary verified", () => {
   it("false when checkinCount = 0", () => {
     expect(isAnomalous(2000n, 0n, 0n, 0n)).toBe(false);
@@ -264,6 +331,10 @@ describe("isAnomalous — true/false boundary verified", () => {
 
   it("false when sumOfIntervals = 0", () => {
     expect(isAnomalous(2000n, 0n, 1n, 0n)).toBe(false);
+  });
+
+  it("false when sumOfIntervals = 0 regardless of checkinCount — guards against zero-divisor", () => {
+    expect(isAnomalous(999_999n, 0n, 100n, 0n)).toBe(false);
   });
 
   it("false when currentSlot <= lastCheckInSlot", () => {
@@ -297,40 +368,63 @@ describe("isAnomalous — true/false boundary verified", () => {
   });
 });
 
-describe("computeVaultInactivityState", () => {
-  const vault = {
-    lastCheckInSlot:          0n,
-    inactivityThresholdSlots: 5_000_000n,
-  };
+// ── computeVaultInactivityState ────────────────────────────────────────────
 
-  it("returns correct score, zone, elapsedSlots, milestones", () => {
+describe("computeVaultInactivityState", () => {
+  it("returns correct score, zone, and milestones for 50% elapsed", () => {
+    const vault = makeVaultAccount(0n, 5_000_000n);
     const state = computeVaultInactivityState(vault, 2_500_000n);
     expect(state.score).toBe(50n);
     expect(state.zone).toBe(ActivityZone.Green);
-    expect(state.elapsedSlots).toBe(2_500_000n);
+    // SDK's VaultInactivityState has { score, zone, milestones } — no elapsedSlots field.
     expect(state.milestones.triggerSlot).toBe(5_000_000n);
     expect(state.milestones.warning75Slot).toBe(3_750_000n);
     expect(state.milestones.warning90Slot).toBe(4_500_000n);
   });
 
   it("zone is Red when score >= 100", () => {
+    const vault = makeVaultAccount(0n, 5_000_000n);
     const state = computeVaultInactivityState(vault, 5_000_000n);
     expect(state.zone).toBe(ActivityZone.Red);
     expect(state.score).toBe(100n);
   });
 
-  it("elapsedSlots = 0 when currentSlot <= lastCheckInSlot", () => {
+  it("score = 0 when currentSlot <= lastCheckInSlot", () => {
+    const vault = makeVaultAccount(0n, 5_000_000n);
     const state = computeVaultInactivityState(vault, 0n);
-    expect(state.elapsedSlots).toBe(0n);
     expect(state.score).toBe(0n);
+    expect(state.zone).toBe(ActivityZone.Green);
   });
 
-  it("accepts any object with lastCheckInSlot + inactivityThresholdSlots", () => {
-    const stub = { lastCheckInSlot: 1000n, inactivityThresholdSlots: 1000n };
-    const state = computeVaultInactivityState(stub, 2000n);
+  it("score = 100 when elapsed = threshold exactly", () => {
+    const vault = makeVaultAccount(1000n, 1000n);
+    const state = computeVaultInactivityState(vault, 2000n);
     expect(state.score).toBe(100n);
+    expect(state.zone).toBe(ActivityZone.Red);
+  });
+
+  it("milestones are derived from the vault's lastCheckInSlot and threshold", () => {
+    const vault = makeVaultAccount(1_000_000n, 5_000_000n);
+    const state = computeVaultInactivityState(vault, 3_000_000n);
+    expect(state.milestones.triggerSlot).toBe(6_000_000n);
+    expect(state.milestones.warning75Slot).toBe(4_750_000n);
+    expect(state.milestones.warning90Slot).toBe(5_500_000n);
+  });
+
+  it("Yellow zone when score is 75–89", () => {
+    const vault = makeVaultAccount(0n, 5_000_000n);
+    const state = computeVaultInactivityState(vault, 4_000_000n); // 80%
+    expect(state.zone).toBe(ActivityZone.Yellow);
+  });
+
+  it("Orange zone when score is 90–99", () => {
+    const vault = makeVaultAccount(0n, 5_000_000n);
+    const state = computeVaultInactivityState(vault, 4_750_000n); // 95%
+    expect(state.zone).toBe(ActivityZone.Orange);
   });
 });
+
+// ── estimateSecondsToTrigger ───────────────────────────────────────────────
 
 describe("estimateSecondsToTrigger", () => {
   it("returns 0 when currentSlot >= triggerSlot", () => {

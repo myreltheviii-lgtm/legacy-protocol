@@ -6,12 +6,12 @@
 // it, and then any party calls this instruction to drain the vault immediately
 // to the beneficiary — bypassing the inactivity threshold entirely.
 //
-// Speed is the design requirement. Emergency sweeps carry zero timelock.
+// For Cloak-shielded vaults: emergency sweep is NOT available because the SOL
+// is not in this PDA — it is in Cloak's shielded pool. The is_shielded() check
+// blocks this path and forces the guardian council to use the off-chain
+// reconstructAndTransfer path instead.
 //
-// Account closure strategy:
-//   vault    → close = beneficiary  (deposited funds + vault rent → beneficiary)
-//   activity → close = caller       (activity rent → caller, incentivises submission)
-//   covenant → close = caller       (covenant rent → caller, incentivises submission)
+// For non-shielded vaults: behavior is identical to pre-Cloak.
 
 use anchor_lang::prelude::*;
 use crate::constants::{ACTIVITY_SEED, COVENANT_SEED, VAULT_SEED};
@@ -31,7 +31,7 @@ pub struct EmergencySweep<'info> {
     )]
     pub vault: Account<'info, VaultAccount>,
 
-    /// CHECK: Identity is verified against vault.beneficiary in the handler.
+    /// CHECK: Identity verified against vault.beneficiary_utxo_pubkey in handler.
     #[account(mut)]
     pub beneficiary: UncheckedAccount<'info>,
 
@@ -63,6 +63,10 @@ pub fn handler(ctx: Context<EmergencySweep>) -> Result<()> {
     require!(!vault.is_emergency_swept,  LegacyError::VaultAlreadySwept);
     require!(!covenant.is_executed,      LegacyError::CovenantAlreadyExecuted);
 
+    // Emergency sweep on a shielded vault would close accounts without moving
+    // the shielded SOL, permanently orphaning the UTXO. Block this path.
+    require!(!vault.is_shielded(), LegacyError::CovenantTypeMismatch);
+
     require!(
         covenant.covenant_type == CovenantType::EmergencySweep,
         LegacyError::CovenantTypeMismatch
@@ -74,11 +78,11 @@ pub fn handler(ctx: Context<EmergencySweep>) -> Result<()> {
         LegacyError::CovenantVaultMismatch
     );
 
-    // Prevents a caller from redirecting the sweep to an arbitrary wallet
-    // by supplying a different account in the beneficiary position.
+    // Reconstruct expected beneficiary from stored UTXO pubkey bytes.
+    let expected_beneficiary = Pubkey::from(vault.beneficiary_utxo_pubkey);
     require_keys_eq!(
         ctx.accounts.beneficiary.key(),
-        vault.beneficiary,
+        expected_beneficiary,
         LegacyError::UnauthorisedBeneficiary
     );
 
@@ -87,9 +91,6 @@ pub fn handler(ctx: Context<EmergencySweep>) -> Result<()> {
         LegacyError::InsufficientSignatures
     );
 
-    // A zero signatures_complete_slot means M-of-N was never actually reached.
-    // Without this guard, EMERGENCY_SWEEP_TIMELOCK_SLOTS being zero would make
-    // the timelock check trivially pass even for a covenant with no signatures.
     require!(
         covenant.signatures_complete_slot > 0,
         LegacyError::InsufficientSignatures
@@ -111,7 +112,7 @@ pub fn handler(ctx: Context<EmergencySweep>) -> Result<()> {
 
     emit!(EmergencySwept {
         vault:       vault.key(),
-        beneficiary: vault.beneficiary,
+        beneficiary: ctx.accounts.beneficiary.key(),
         lamports:    vault_lamports,
         swept_slot:  clock.slot,
         covenant:    covenant.key(),
@@ -124,7 +125,6 @@ pub fn handler(ctx: Context<EmergencySweep>) -> Result<()> {
 pub struct EmergencySwept {
     pub vault:       Pubkey,
     pub beneficiary: Pubkey,
-    /// Vault lamports transferred to beneficiary (deposited funds + vault rent).
     pub lamports:    u64,
     pub swept_slot:  u64,
     pub covenant:    Pubkey,

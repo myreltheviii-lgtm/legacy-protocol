@@ -1,6 +1,7 @@
 // sdk/src/events.ts
 //
-// Parsers for all 17 on-chain events emitted by the Legacy Vault program.
+// Parsers for all 19 on-chain events emitted by the Legacy Vault program.
+// (17 original + CloakDepositRecorded + InheritanceCloakClaimed)
 //
 // Anchor emits events as base64-encoded data in program log lines that start
 // with "Program data: ". The decoded bytes are:
@@ -12,7 +13,7 @@
 // the CovenantType enum is 1 byte (variant index 0/1/2).
 
 import { PublicKey } from "@solana/web3.js";
-import { createHash } from "node:crypto";
+import { createHash } from "crypto";
 import { CovenantType, LegacyEvent } from "./types";
 
 // ── Discriminator computation ─────────────────────────────────────────────────
@@ -23,7 +24,7 @@ function eventDiscriminator(name: string): Buffer {
   ).slice(0, 8);
 }
 
-// Pre-compute all 17 discriminators at module load time. Each is 8 bytes.
+// Pre-compute all 19 discriminators at module load time. Each is 8 bytes.
 const DISC: Record<string, Buffer> = {
   VaultInitialised:          eventDiscriminator("VaultInitialised"),
   CheckedIn:                 eventDiscriminator("CheckedIn"),
@@ -42,6 +43,9 @@ const DISC: Record<string, Buffer> = {
   BeneficiaryChanged:        eventDiscriminator("BeneficiaryChanged"),
   GuardianRemovedByCovenant: eventDiscriminator("GuardianRemovedByCovenant"),
   OrphanedCovenantClosed:    eventDiscriminator("OrphanedCovenantClosed"),
+  // Cloak integration events — emitted by record_cloak_deposit and record_cloak_claim
+  CloakDepositRecorded:      eventDiscriminator("CloakDepositRecorded"),
+  InheritanceCloakClaimed:   eventDiscriminator("InheritanceCloakClaimed"),
 };
 
 // ── Binary reading helpers ────────────────────────────────────────────────────
@@ -60,7 +64,7 @@ class Reader {
   }
 
   u64(): bigint {
-    const val = this.buf.readBigUInt64LE(this.pos);
+    let val = 0n; for (let i = 7; i >= 0; i--) { val = (val << 8n) | BigInt(this.buf[this.pos + i]); }
     this.pos += 8;
     return val;
   }
@@ -77,8 +81,30 @@ class Reader {
     return val;
   }
 
+  bytes32Hex(): string {
+    const hex = this.buf.slice(this.pos, this.pos + 32).toString("hex");
+    this.pos += 32;
+    return hex;
+  }
+
+  bytes64Hex(): string {
+    const hex = this.buf.slice(this.pos, this.pos + 64).toString("hex");
+    this.pos += 64;
+    return hex;
+  }
+
   covenantType(): CovenantType {
-    return this.u8() as CovenantType;
+    // CovenantType is a string enum — "EmergencySweep" / "BeneficiaryChange" /
+    // "GuardianRemoval". Casting a u8 number directly to CovenantType returns
+    // the number, not the enum string, silently breaking any === comparison
+    // downstream. Map the discriminant explicitly, matching the Rust variant
+    // declaration order in state/covenant.rs.
+    const discriminant = this.u8();
+    switch (discriminant) {
+      case 1: return CovenantType.BeneficiaryChange;
+      case 2: return CovenantType.GuardianRemoval;
+      default: return CovenantType.EmergencySweep; // 0 and any unknown value
+    }
   }
 }
 
@@ -87,13 +113,16 @@ class Reader {
 export function parseVaultInitialisedEvent(data: Buffer): LegacyEvent | null {
   if (!DISC["VaultInitialised"].equals(data.slice(0, 8))) return null;
   const r = new Reader(data, 8);
+  // On-chain struct: vault(Pubkey), owner(Pubkey), beneficiary_utxo_pubkey([u8;32]),
+  // threshold_slots(u64), created_slot(u64)
+  // [u8;32] and Pubkey have identical 32-byte wire encoding.
   return {
-    name:           "VaultInitialised",
-    vault:          r.pubkey(),
-    owner:          r.pubkey(),
-    beneficiary:    r.pubkey(),
-    thresholdSlots: r.u64(),
-    createdSlot:    r.u64(),
+    name:                  "VaultInitialised",
+    vault:                 r.pubkey(),
+    owner:                 r.pubkey(),
+    beneficiaryUtxoPubkey: r.bytes32Hex(),
+    thresholdSlots:        r.u64(),
+    createdSlot:           r.u64(),
   };
 }
 
@@ -262,13 +291,15 @@ export function parseCovenantSignedEvent(data: Buffer): LegacyEvent | null {
 export function parseBeneficiaryChangedEvent(data: Buffer): LegacyEvent | null {
   if (!DISC["BeneficiaryChanged"].equals(data.slice(0, 8))) return null;
   const r = new Reader(data, 8);
+  // On-chain struct: vault(Pubkey), old_beneficiary_utxo_pubkey([u8;32]),
+  // new_beneficiary_utxo_pubkey([u8;32]), covenant(Pubkey), executed_slot(u64)
   return {
-    name:           "BeneficiaryChanged",
-    vault:          r.pubkey(),
-    oldBeneficiary: r.pubkey(),
-    newBeneficiary: r.pubkey(),
-    covenant:       r.pubkey(),
-    executedSlot:   r.u64(),
+    name:                      "BeneficiaryChanged",
+    vault:                     r.pubkey(),
+    oldBeneficiaryUtxoPubkey:  r.bytes32Hex(),
+    newBeneficiaryUtxoPubkey:  r.bytes32Hex(),
+    covenant:                  r.pubkey(),
+    executedSlot:              r.u64(),
   };
 }
 
@@ -301,6 +332,63 @@ export function parseOrphanedCovenantClosedEvent(data: Buffer): LegacyEvent | nu
   };
 }
 
+// ── Cloak integration event parsers ──────────────────────────────────────────
+//
+// These two parsers cover the events emitted by the two new instructions:
+//   record_cloak_deposit → CloakDepositRecorded
+//   record_cloak_claim   → InheritanceCloakClaimed
+//
+// Without these parsers, the watcher, relayer, and any monitoring tooling
+// is completely blind to shielded vault state changes.
+
+/**
+ * Parses a CloakDepositRecorded event.
+ *
+ * On-chain struct (record_cloak_deposit.rs):
+ *   vault:           Pubkey      — 32 bytes
+ *   owner:           Pubkey      — 32 bytes
+ *   utxo_commitment: [u8;32]     — 32 bytes (Poseidon hash, hex-encoded in TS)
+ *   utxo_leaf_index: u64         — 8 bytes LE
+ *   lamports:        u64         — 8 bytes LE (this deposit's shielded amount)
+ *   total_lamports:  u64         — 8 bytes LE (cumulative shielded amount)
+ */
+export function parseCloakDepositRecordedEvent(data: Buffer): LegacyEvent | null {
+  if (!DISC["CloakDepositRecorded"].equals(data.slice(0, 8))) return null;
+  const r = new Reader(data, 8);
+  return {
+    name:           "CloakDepositRecorded",
+    vault:          r.pubkey(),
+    owner:          r.pubkey(),
+    utxoCommitment: r.bytes32Hex(),
+    utxoLeafIndex:  r.u64(),
+    lamports:       r.u64(),
+    totalLamports:  r.u64(),
+  };
+}
+
+/**
+ * Parses an InheritanceCloakClaimed event.
+ *
+ * On-chain struct (record_cloak_claim.rs):
+ *   vault:                    Pubkey     — 32 bytes
+ *   beneficiary_utxo_pubkey:  [u8;32]    — 32 bytes (Cloak UTXO pubkey, hex-encoded in TS)
+ *   lamports:                 u64        — 8 bytes LE (declared shielded amount)
+ *   cloak_transfer_signature: [u8;64]    — 64 bytes (Solana tx signature bytes)
+ *   claimed_slot:             u64        — 8 bytes LE
+ */
+export function parseInheritanceCloakClaimedEvent(data: Buffer): LegacyEvent | null {
+  if (!DISC["InheritanceCloakClaimed"].equals(data.slice(0, 8))) return null;
+  const r = new Reader(data, 8);
+  return {
+    name:                   "InheritanceCloakClaimed",
+    vault:                  r.pubkey(),
+    beneficiaryUtxoPubkey:  r.bytes32Hex(),
+    lamports:               r.u64(),
+    cloakTransferSignature: r.bytes64Hex(),
+    claimedSlot:            r.u64(),
+  };
+}
+
 // ── Log-level parsing ─────────────────────────────────────────────────────────
 
 const ALL_PARSERS = [
@@ -321,6 +409,9 @@ const ALL_PARSERS = [
   parseBeneficiaryChangedEvent,
   parseGuardianRemovedByCovenantEvent,
   parseOrphanedCovenantClosedEvent,
+  // Cloak integration events
+  parseCloakDepositRecordedEvent,
+  parseInheritanceCloakClaimedEvent,
 ];
 
 /**

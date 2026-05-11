@@ -78,10 +78,31 @@ pub const MAX_COVENANT_SIGNERS: usize = 10;
 pub const DISCRIMINATOR: usize = 8;
 
 /// Space required by VaultAccount on-chain.
+///
+/// Layout (168 bytes):
+///   [0..8]    discriminator
+///   [8..40]   owner: Pubkey
+///   [40..72]  beneficiary_utxo_pubkey: [u8;32]  — Cloak UTXO pubkey, replaces plain beneficiary
+///   [72]      guardian_count: u8
+///   [73]      m_of_n_threshold: u8
+///   [74..82]  inactivity_threshold_slots: u64
+///   [82..90]  last_check_in_slot: u64
+///   [90..98]  created_slot: u64
+///   [98..106] deposited_lamports: u64
+///   [106..114] covenant_counter: u64
+///   [114..122] vault_index: u64
+///   [122..154] utxo_commitment: [u8;32]   — Poseidon hash of shielded UTXO
+///   [154..162] utxo_leaf_index: u64       — leaf position in Cloak Merkle tree
+///   [162]     is_triggered: bool
+///   [163]     is_claimed: bool
+///   [164]     is_emergency_swept: bool
+///   [165]     warning_75_sent: bool
+///   [166]     warning_90_sent: bool
+///   [167]     bump: u8
 pub const VAULT_ACCOUNT_SIZE: usize =
     DISCRIMINATOR
     + 32  // owner: Pubkey
-    + 32  // beneficiary: Pubkey
+    + 32  // beneficiary_utxo_pubkey: [u8;32]  (Cloak UTXO pubkey — replaces Solana wallet)
     + 1   // guardian_count: u8
     + 1   // m_of_n_threshold: u8
     + 8   // inactivity_threshold_slots: u64
@@ -90,13 +111,15 @@ pub const VAULT_ACCOUNT_SIZE: usize =
     + 8   // deposited_lamports: u64
     + 8   // covenant_counter: u64
     + 8   // vault_index: u64
+    + 32  // utxo_commitment: [u8;32]   — Poseidon commitment of shielded UTXO
+    + 8   // utxo_leaf_index: u64       — leaf index in Cloak Merkle tree
     + 1   // is_triggered: bool
     + 1   // is_claimed: bool
     + 1   // is_emergency_swept: bool
     + 1   // warning_75_sent: bool
     + 1   // warning_90_sent: bool
     + 1;  // bump: u8
-// = 128 bytes
+// = 168 bytes
 
 /// Space required by ActivityAccount on-chain.
 pub const ACTIVITY_ACCOUNT_SIZE: usize =

@@ -89,15 +89,16 @@ describe("geyser client logic", () => {
   });
 
   it("reconnect loop re-runs snapshot on every reconnect — verified by zone computation", () => {
-    // After a disconnect and reconnect, the vault state should be recomputed from fresh data
+    // After a disconnect and reconnect, the vault state should be recomputed from fresh data.
     const vault = makeRecord(0n, 5_000_000n);
 
     // First compute at slot 4_000_000 (80% = Yellow)
     const state1 = computeVaultInactivityState(vault, 4_000_000n);
     expect(state1.zone).toBe(ActivityZone.Yellow);
 
-    // After owner checks in (simulated by updating lastCheckInSlot)
-    const updatedVault = { ...vault, lastCheckInSlot: "4_000_001" };
+    // After owner checks in (simulated by updating lastCheckInSlot).
+    // IMPORTANT: do NOT use underscore separators in numeric strings — BigInt("4_000_001") throws.
+    const updatedVault = { ...vault, lastCheckInSlot: "4000001" };
     const state2 = computeVaultInactivityState(updatedVault, 4_000_100n);
     // 99 slots elapsed out of 5_000_000 = ~0% → Green
     expect(state2.zone).toBe(ActivityZone.Green);
@@ -137,6 +138,28 @@ describe("geyser client logic", () => {
     // New: 1_000 elapsed = ~0% Green
     expect(newState.zone).toBe(ActivityZone.Green);
   });
-});
-```
 
+  it("numeric string fields must not contain underscore separators — BigInt parse safety", () => {
+    // Verify that VaultRecord numeric strings round-trip through BigInt correctly.
+    // Strings like "4_000_001" are invalid for BigInt() and throw SyntaxError.
+    const validStrings = ["0", "1000", "5000000", "4000001", "18446744073709551615"];
+    for (const s of validStrings) {
+      expect(() => BigInt(s)).not.toThrow();
+    }
+
+    // Demonstrate the failure mode — underscore separators are not valid.
+    expect(() => BigInt("4_000_001")).toThrow(SyntaxError);
+    expect(() => BigInt("1_000_000")).toThrow(SyntaxError);
+
+    // Vault records derived from lastCheckInSlot.toString() are always safe
+    const slot = 4_000_001n;
+    const slotStr = slot.toString(); // "4000001" — no underscores
+    expect(slotStr).toBe("4000001");
+    expect(BigInt(slotStr)).toBe(slot);
+
+    // A record built with vault data from toString() never introduces underscores
+    const vault = makeRecord(slot, 5_000_000n);
+    expect(() => BigInt(vault.lastCheckInSlot)).not.toThrow();
+    expect(BigInt(vault.lastCheckInSlot)).toBe(slot);
+  });
+});

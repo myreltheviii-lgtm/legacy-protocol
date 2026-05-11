@@ -1,4 +1,3 @@
-// app/src/lib/format.ts
 //
 // Formatting utilities used across all components. Centralised here so a
 // change in display convention requires exactly one edit.

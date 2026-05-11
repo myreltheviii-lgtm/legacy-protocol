@@ -128,7 +128,7 @@ npm start
 Create `app/.env.local`:
 
 ```bash
-NEXT_PUBLIC_LEGACY_VAULT_PROGRAM_ID=7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe
+NEXT_PUBLIC_LEGACY_VAULT_PROGRAM_ID=4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd
 NEXT_PUBLIC_SOLANA_RPC_ENDPOINT=https://mainnet.helius-rpc.com/?api-key=YOUR_KEY
 NEXT_PUBLIC_SOLANA_CLUSTER=mainnet-beta  # omit for mainnet (no ?cluster= suffix on explorer URLs)
 ```

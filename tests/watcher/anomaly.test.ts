@@ -63,6 +63,22 @@ describe("watcher anomaly detection", () => {
     expect(isAnomalous(2000n, 0n, 0n, 0n)).toBe(false);
   });
 
+  it("no anomaly when sumOfIntervals = 0 with non-zero checkinCount", () => {
+    // Authoritative Layer H: isAnomalous must return false when sumOfIntervals=0
+    // regardless of checkinCount — avoids division producing NaN or 0 threshold.
+    // With sum=0, the average interval is 0, and no elapsed time can be anomalous
+    // relative to an average of 0 (the condition sum=0 is a guard case).
+    expect(isAnomalous(2000n, 0n, 1n, 0n)).toBe(false);
+    expect(isAnomalous(2000n, 0n, 5n, 0n)).toBe(false);
+    expect(isAnomalous(999999n, 0n, 10n, 0n)).toBe(false);
+  });
+
+  it("no anomaly when currentSlot <= lastCheckInSlot", () => {
+    // Elapsed = 0 or negative — cannot be anomalous
+    expect(isAnomalous(1000n, 2000n, 5n, 5000n)).toBe(false);
+    expect(isAnomalous(1000n, 1000n, 5n, 5000n)).toBe(false);
+  });
+
   it("already-flagged vault: anomalyFlagged field is tracked in DB", () => {
     const vault = makeVaultRecord();
     getStore().registerVault(vault);
@@ -100,6 +116,21 @@ describe("watcher anomaly detection", () => {
     expect(getStore().getVault(v1.vaultAddress)!.anomalyFlagged).toBe(true);
     expect(getStore().getVault(v2.vaultAddress)!.anomalyFlagged).toBe(false);
   });
-});
-```
 
+  it("anomaly boundary: exactly at 1.5× threshold is NOT anomalous (strictly greater)", () => {
+    // count=1, sum=1000, average=1000, threshold=1500
+    // elapsed=1500 → 1500 > 1500 is false → NOT anomalous
+    expect(isAnomalous(1501n, 1n, 1n, 1000n)).toBe(false);
+    // elapsed=1501 → 1501 > 1500 is true → IS anomalous
+    expect(isAnomalous(1502n, 1n, 1n, 1000n)).toBe(true);
+  });
+
+  it("anomaly with large sum and count — multiply-before-divide prevents truncation", () => {
+    // Large values that would overflow if intermediate float was used
+    // sum=10_000_000, count=1000, avg=10_000, anomaly_threshold=15_000
+    // elapsed=15_001 → anomalous
+    expect(isAnomalous(15_002n, 1n, 1000n, 10_000_000n)).toBe(true);
+    // elapsed=15_000 → NOT anomalous
+    expect(isAnomalous(15_001n, 1n, 1000n, 10_000_000n)).toBe(false);
+  });
+});

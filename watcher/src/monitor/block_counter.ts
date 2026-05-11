@@ -30,6 +30,11 @@ export const WARNING_SLOT_PCT_75    = 75n;
 export const WARNING_SLOT_PCT_90    = 90n;
 export const ANOMALY_MULTIPLIER_PCT = 150n; // 1.5× the historical average interval
 
+// Solana produces approximately 2 slots per second, giving 172 800 slots per day.
+// Used by the QVAC layer to express elapsed and historical intervals in days
+// so the LLM prompt contains human-readable durations rather than raw slot counts.
+export const SLOTS_PER_DAY = 172_800n;
+
 // ── Zone classification ───────────────────────────────────────────────────────
 
 export enum ActivityZone {
@@ -150,7 +155,7 @@ export function computeVaultInactivityState(
   vault: VaultRecord,
   currentSlot: bigint,
 ): VaultInactivityState {
-  const lastCheckInSlot         = BigInt(vault.lastCheckInSlot);
+  const lastCheckInSlot          = BigInt(vault.lastCheckInSlot);
   const inactivityThresholdSlots = BigInt(vault.inactivityThresholdSlots);
 
   const elapsedSlots = currentSlot > lastCheckInSlot

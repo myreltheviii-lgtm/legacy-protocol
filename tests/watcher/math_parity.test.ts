@@ -1,5 +1,12 @@
+// tests/watcher/math_parity.test.ts
+//
 // Tests that the watcher's math module (block_counter.ts) produces
 // bit-identical results to the SDK's math module (which mirrors the Rust).
+//
+// Zone string values differ intentionally between modules:
+//   SDK ActivityZone:     Green="Green", Yellow="Yellow", Orange="Orange", Red="Red"
+//   Watcher ActivityZone: Green="GREEN", Yellow="YELLOW", Orange="ORANGE", Red="RED"
+// Parity is verified by normalising to uppercase for cross-module comparisons.
 
 import {
   computeInactivityScore   as sdkScore,
@@ -7,8 +14,8 @@ import {
   computeMilestones        as sdkMilestones,
   isAnomalous              as sdkAnomalous,
   thresholdCrossed         as sdkThresholdCrossed,
-  ActivityZone             as SdkZone,
 } from "../../sdk/src/math";
+import { ActivityZone as SdkZone } from "../../sdk/src/types";
 
 import {
   computeInactivityScore   as watcherScore,
@@ -17,30 +24,6 @@ import {
   isAnomalous              as watcherAnomalous,
   ActivityZone             as WatcherZone,
 } from "../../watcher/src/monitor/block_counter";
-
-// The watcher's VaultRecord stores u64 as strings
-function makeVaultRecord(lastCheckInSlot: bigint, inactivityThresholdSlots: bigint) {
-  return {
-    vaultAddress:             "11111111111111111111111111111111",
-    ownerAddress:             "11111111111111111111111111111111",
-    beneficiary:              "11111111111111111111111111111111",
-    vaultIndex:               "0",
-    lastCheckInSlot:          lastCheckInSlot.toString(),
-    inactivityThresholdSlots: inactivityThresholdSlots.toString(),
-    depositedLamports:        "0",
-    guardianCount:            0,
-    mOfNThreshold:            0,
-    warning75Sent:            false,
-    warning90Sent:            false,
-    triggerSignalled:         false,
-    anomalyFlagged:           false,
-    checkinCount:             "0",
-    sumOfIntervals:           "0",
-    lastPolledSlot:           "0",
-    createdAt:                "2024-01-01 00:00:00",
-    updatedAt:                "2024-01-01 00:00:00",
-  };
-}
 
 const THRESHOLD = 5_000_000n;
 
@@ -65,13 +48,16 @@ describe("watcher vs SDK math parity", () => {
     }
   });
 
-  it("classifyZone: parity for all boundary values and zones", () => {
+  it("classifyZone: parity for all boundary values — both classify the same score to the same zone", () => {
+    // SDK uses mixed case ("Green"), watcher uses uppercase ("GREEN").
+    // Parity means both agree on which zone a score falls into, which is
+    // verified by comparing their uppercase-normalised string values.
     const scores = [0n, 1n, 74n, 75n, 89n, 90n, 99n, 100n, 101n, 200n];
     for (const score of scores) {
       const sdkZone     = sdkClassify(score);
       const watcherZone = watcherClassify(score);
-      // Map zone strings to compare
-      expect(watcherZone.toString()).toBe(sdkZone.toString());
+      // Normalise both to uppercase to compare across the intentional case difference.
+      expect(watcherZone.toString()).toBe(sdkZone.toString().toUpperCase());
     }
   });
 
@@ -122,7 +108,9 @@ describe("watcher vs SDK math parity", () => {
     expect(sdkScore(elapsed, 0n, threshold)).toBe(watcherScore(elapsed, 0n, threshold));
   });
 
-  it("Zone boundaries match across all 4 zones", () => {
+  it("Zone boundaries match across all 4 zones — SDK and watcher agree on zone classification", () => {
+    // Authoritative uppercase zone strings (as used by the watcher).
+    // SDK uses "Green" etc. (mixed case) — normalised to uppercase for comparison.
     const boundaries: Array<[bigint, string]> = [
       [0n,   "GREEN"],
       [74n,  "GREEN"],
@@ -136,10 +124,22 @@ describe("watcher vs SDK math parity", () => {
     for (const [score, expectedZone] of boundaries) {
       const watcher = watcherClassify(score);
       const sdk     = sdkClassify(score);
+      // Watcher returns uppercase directly ("GREEN").
       expect(watcher).toBe(expectedZone as any);
-      expect(sdk.toString()).toBe(expectedZone);
+      // SDK returns mixed case ("Green") — normalise to uppercase for the comparison.
+      expect(sdk.toString().toUpperCase()).toBe(expectedZone);
+    }
+  });
+
+  it("thresholdCrossed parity for boundary values", () => {
+    const cases: Array<[bigint, bigint, bigint, boolean]> = [
+      [5_000_000n, 0n, 5_000_000n, true],
+      [4_999_999n, 0n, 5_000_000n, false],
+      [1_500_000n, 1_000_000n, 500_000n, true],
+      [1_499_999n, 1_000_000n, 500_000n, false],
+    ];
+    for (const [current, lastCheckIn, threshold, expected] of cases) {
+      expect(sdkThresholdCrossed(current, lastCheckIn, threshold)).toBe(expected);
     }
   });
 });
-```
-

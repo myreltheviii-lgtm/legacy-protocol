@@ -34,6 +34,16 @@
 //   GREEN/YELLOW vaults  → run pipeline every HEARTBEAT_SLOTS (default 300)
 //   ORANGE vault present → run every HEARTBEAT_SLOTS_ORANGE (default 100)
 //   RED vault present    → run every HEARTBEAT_SLOTS_RED (default 30)
+//
+// QVAC startup order (after initSigningPool, before Solana connection):
+//   1. prewarmQVACModels()     — download + cache both models locally
+//   2. initQVACAnomalyEngine() — load persistent LLM handle
+//   3. initQVACRagStore()      — load embedder handle, open RAG DB
+//
+// QVAC shutdown order (absolute — QVAC unloads before store closes):
+//   1. shutdownQVACAnomalyEngine() — unload LLM model
+//   2. closeQVACRagStore()         — unload embedder, close RAG DB
+//   3. getStore().close()          — close main SQLite store last
 
 import "dotenv/config";
 import { Connection, PublicKey }   from "@solana/web3.js";
@@ -41,6 +51,7 @@ import { AnchorProvider, Program, Idl } from "@coral-xyz/anchor";
 import { Wallet }                  from "@coral-xyz/anchor";
 import { Keypair }                 from "@solana/web3.js";
 import http                        from "http";
+import path                        from "path";
 
 import { getConfig }                 from "./config";
 import { initStore, getStore }       from "./db/store";
@@ -58,6 +69,18 @@ import {
   signalEligibleTriggers,
   initTriggerSigner,
 } from "./alerts/trigger_signal";
+
+import {
+  prewarmQVACModels,
+  initQVACAnomalyEngine,
+  shutdownQVACAnomalyEngine,
+  buildVaultBehavior,
+} from "./monitor/qvac_anomaly";
+import {
+  initQVACRagStore,
+  closeQVACRagStore,
+  ingestVaultBehavior,
+} from "./monitor/qvac_rag";
 
 import {
   detectAccountKind, AccountKind,
@@ -123,6 +146,24 @@ async function main(): Promise<void> {
   // call, _signerLoaded stays false and all signals are emitted unsigned even
   // when a key is configured.
   initTriggerSigner(config.triggerSignerSecretKey);
+
+  // ── QVAC startup — runs after initSigningPool, before Solana connection ──
+  // Order is absolute: prewarm → initAnomaly → initRag.
+  // prewarmQVACModels downloads and caches both the LLM and embedder models.
+  // initQVACAnomalyEngine loads the persistent LLM handle into RAM.
+  // initQVACRagStore loads the embedder handle and opens the RAG SQLite DB.
+  try {
+    await prewarmQVACModels();
+    await initQVACAnomalyEngine();
+    // RAG DB is co-located with the main store — derive the path from config.dbPath.
+    const ragDbPath = config.dbPath.replace(/\.db$/, "") + "-rag.db";
+    await initQVACRagStore(ragDbPath);
+    logger.info("QVAC: all engines initialised");
+  } catch (err) {
+    // QVAC failure is non-fatal — the watcher continues without LLM analysis.
+    // The anomaly pipeline falls back to ratio-based detection automatically.
+    logger.error({ err }, "QVAC: startup failed — continuing without QVAC (fallback mode)");
+  }
 
   connection = new Connection(config.rpcEndpoint, {
     commitment:              "confirmed",
@@ -247,7 +288,7 @@ function handleAccountUpdate(pubkey: string, data: Buffer, slot: bigint): void {
     const record: Omit<VaultRecord, "createdAt" | "updatedAt"> = {
       vaultAddress:             pubkey,
       ownerAddress:             vault.owner,
-      beneficiary:              vault.beneficiary,
+      beneficiary:              vault.beneficiaryUtxoPubkey,
       vaultIndex:               vault.vaultIndex.toString(),
       lastCheckInSlot:          vault.lastCheckInSlot.toString(),
       inactivityThresholdSlots: vault.inactivityThresholdSlots.toString(),
@@ -419,6 +460,30 @@ async function runPollCycle(config: ReturnType<typeof getConfig>): Promise<void>
     incAnomalyFlags(anomalyFlags);
     incAlertErrors(anomalyResults.filter((r) => r.error).length);
 
+    // ── QVAC RAG ingest — runs after evaluateAllAnomalies for every vault ──
+    // Feeds behavioral patterns into the RAG store so future similarity
+    // queries have an ever-growing corpus of historical vault behavior.
+    // triggered is set to true for vaults whose anomaly flag was submitted
+    // this cycle so the RAG store can identify behaviorally significant patterns.
+    const anomalyFlaggedSet = new Set(
+      anomalyResults.filter((r) => r.flagSubmitted).map((r) => r.vaultAddress),
+    );
+    const stateMap = new Map(inactivityStates.map((s) => [s.vaultAddress, s]));
+
+    for (const vault of activeVaults) {
+      const state = stateMap.get(vault.vaultAddress);
+      if (!state) continue;
+      const triggered = anomalyFlaggedSet.has(vault.vaultAddress);
+      // Build the behavior struct with 0 similar vaults for ingest — the RAG
+      // count is only meaningful during query, not during corpus construction.
+      const behavior = buildVaultBehavior(vault, state, 0);
+      // Fire-and-forget: RAG ingest failures are logged inside ingestVaultBehavior
+      // and must never block or throw in the poll cycle.
+      ingestVaultBehavior(behavior, triggered).catch((err) =>
+        logger.error({ vault: vault.vaultAddress, err }, "QVAC RAG: background ingest error"),
+      );
+    }
+
     const pingResults = await sendGuardianPingsForEligibleVaults(
       connection, program, activeVaults, inactivityStates,
     );
@@ -576,8 +641,47 @@ async function shutdown(signal: string): Promise<void> {
 
   if (maintenanceTimer) clearInterval(maintenanceTimer);
 
-  // Stop the Geyser client — this unblocks the await in main().
+  // Stop the Geyser client — this unblocks the await in main() and prevents
+  // any new slot notifications from triggering further heartbeat poll cycles.
   stopGeyserClient();
+
+  // Wait for any in-flight poll cycle to finish before closing resources.
+  // runPollCycle checks isShuttingDown on entry so no new cycle can start,
+  // but a cycle already past that check may be mid-execution. Closing the
+  // QVAC engines or the SQLite store while the cycle is still issuing
+  // completion() calls or upsertVault writes would cause those operations to
+  // throw against closed handles. Allow up to 10 s for the cycle to finish
+  // (a typical cycle completes well under 5 s); force through after that to
+  // avoid hanging the process on a stalled RPC call.
+  if (isPolling) {
+    logger.info("Waiting for in-flight poll cycle to finish before closing resources");
+    const deadlineMs  = Date.now() + 10_000;
+    const pollIntervalMs = 50;
+    while (isPolling && Date.now() < deadlineMs) {
+      await new Promise<void>((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+    if (isPolling) {
+      logger.warn("Poll cycle did not finish within 10 s — forcing shutdown");
+    } else {
+      logger.info("Poll cycle finished — proceeding with resource teardown");
+    }
+  }
+
+  // QVAC shutdown order is absolute — QVAC unloads before store closes.
+  // 1. Unload the LLM model first.
+  // 2. Unload embedder and close RAG DB second.
+  // 3. Close main SQLite store last.
+  try {
+    await shutdownQVACAnomalyEngine();
+  } catch (_) {
+    // Non-fatal — process is exiting.
+  }
+
+  try {
+    await closeQVACRagStore();
+  } catch (_) {
+    // Non-fatal — process is exiting.
+  }
 
   try {
     getStore().close();

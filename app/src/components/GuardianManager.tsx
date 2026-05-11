@@ -1,12 +1,3 @@
-// app/src/components/GuardianManager.tsx
-//
-// Owner interface for managing the guardian council.
-//
-// Level 2 optimistic updates: when the owner initiates removal, the guardian
-// row immediately shows "⏳ Removal pending" without waiting for confirmation.
-// When a guardian is added, the list grows immediately with a pending indicator.
-// Reverted on error; reconciled with on-chain truth via onRefresh() on success.
-
 "use client";
 
 import React, { useState } from "react";
@@ -41,8 +32,8 @@ export function GuardianManager({ vault, vaultPda, guardians, onRefresh }: Guard
   const [adding,       setAdding]       = useState(false);
   const [removing,     setRemoving]     = useState<string | null>(null);
   const [txMsg,        setTxMsg]        = useState<{ type: "success" | "error"; text: string } | null>(null);
-
-  // Optimistic overlay for the guardian list. Null = use live guardians prop.
+  const [lastAddedGuardian, setLastAddedGuardian] = useState<string | null>(null);
+  const [copiedInvite,      setCopiedInvite]      = useState(false);
   const [optimisticGuardians, setOptimisticGuardians] = useState<GuardianWithAddress[] | null>(null);
 
   const isOwner = publicKey?.toBase58() === vault.owner;
@@ -53,16 +44,30 @@ export function GuardianManager({ vault, vaultPda, guardians, onRefresh }: Guard
     setOptimisticGuardians(null);
   }
 
+  function buildInviteLink(): string {
+    if (typeof window === "undefined") return "";
+    return `${window.location.origin}/vault/${vaultPda}?role=guardian`;
+  }
+
+  async function handleCopyInvite() {
+    const link = buildInviteLink();
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedInvite(true);
+      setTimeout(() => setCopiedInvite(false), 2000);
+    } catch { /* ignore */ }
+  }
+
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!publicKey || !signTransaction || !addAddress.trim()) return;
 
     setAdding(true);
     setTxMsg(null);
+    setLastAddedGuardian(null);
 
     const guardianPk = new PublicKey(addAddress.trim());
-
-    // Optimistic: append a placeholder guardian row immediately.
     const [pda] = deriveGuardianPda(PROGRAM_ID, new PublicKey(vaultPda), guardianPk);
     const placeholder: GuardianWithAddress = {
       publicKey: pda.toBase58(),
@@ -86,15 +91,18 @@ export function GuardianManager({ vault, vaultPda, guardians, onRefresh }: Guard
           owner:         publicKey,
           vaultPda:      new PublicKey(vaultPda),
           guardian:      guardianPk,
+          guardianAccountPda: pda,
           mOfNThreshold: addThreshold,
         })],
       );
       setTxMsg({ type: "success", text: `Guardian added. Tx: ${result.signature.slice(0, 8)}…` });
+      setLastAddedGuardian(guardianPk.toBase58());
       setAddAddress("");
       clearOptimistic();
       await onRefresh();
     } catch (err) {
       clearOptimistic();
+      setLastAddedGuardian(null);
       setTxMsg({ type: "error", text: err instanceof Error ? err.message : "Transaction failed" });
     } finally {
       setAdding(false);
@@ -107,8 +115,6 @@ export function GuardianManager({ vault, vaultPda, guardians, onRefresh }: Guard
     setRemoving(guardianAddress);
     setTxMsg(null);
 
-    // Optimistic: if no removal is pending yet (Phase 1), show the pending
-    // indicator immediately. If already pending (Phase 2), grey out the row.
     const existing = guardians.find((g) => g.account.guardian === guardianAddress);
     if (existing && existing.account.removalRequestedSlot === 0n) {
       setOptimisticGuardians(
@@ -125,10 +131,10 @@ export function GuardianManager({ vault, vaultPda, guardians, onRefresh }: Guard
         connection,
         { publicKey, signTransaction } as any,
         [buildRemoveGuardianIx({
-          programId:         PROGRAM_ID,
-          owner:             publicKey,
-          vaultPda:          new PublicKey(vaultPda),
-          guardian:          new PublicKey(guardianAddress),
+          programId:          PROGRAM_ID,
+          owner:              publicKey,
+          vaultPda:           new PublicKey(vaultPda),
+          guardian:           new PublicKey(guardianAddress),
           guardianAccountPda: new PublicKey(guardianAccountPda),
         })],
       );
@@ -159,7 +165,6 @@ export function GuardianManager({ vault, vaultPda, guardians, onRefresh }: Guard
           <ul className="space-y-3 mb-5" aria-label="Active guardians">
             {displayGuardians.map((g) => {
               const isPending = g.account.removalRequestedSlot > 0n;
-
               return (
                 <li
                   key={g.publicKey}
@@ -189,11 +194,10 @@ export function GuardianManager({ vault, vaultPda, guardians, onRefresh }: Guard
                       )}
                     </div>
                   </div>
-
                   {isOwner && (
                     <button
                       className="btn-danger text-sm px-3 py-1.5"
-                      onClick={() => handleRemove(g.account.guardian, g.publicKey)}
+                      onClick={() => { void handleRemove(g.account.guardian, g.publicKey); }}
                       disabled={removing === g.account.guardian}
                       aria-label={
                         isPending
@@ -201,11 +205,7 @@ export function GuardianManager({ vault, vaultPda, guardians, onRefresh }: Guard
                           : `Initiate removal of guardian ${shortAddress(g.account.guardian)}`
                       }
                     >
-                      {removing === g.account.guardian
-                        ? "…"
-                        : isPending
-                        ? "Finalise"
-                        : "Remove"}
+                      {removing === g.account.guardian ? "…" : isPending ? "Finalise" : "Remove"}
                     </button>
                   )}
                 </li>
@@ -215,13 +215,11 @@ export function GuardianManager({ vault, vaultPda, guardians, onRefresh }: Guard
         )}
 
         {isOwner && canAdd && (
-          <form onSubmit={handleAdd} aria-label="Add new guardian">
+          <form onSubmit={(e) => { void handleAdd(e); }} aria-label="Add new guardian">
             <h3 className="label mb-3">Add Guardian</h3>
             <div className="space-y-3">
               <div>
-                <label htmlFor="guardian-address" className="sr-only">
-                  Guardian wallet address
-                </label>
+                <label htmlFor="guardian-address" className="sr-only">Guardian wallet address</label>
                 <input
                   id="guardian-address"
                   type="text"
@@ -263,9 +261,7 @@ export function GuardianManager({ vault, vaultPda, guardians, onRefresh }: Guard
         )}
 
         {!canAdd && isOwner && (
-          <p className="text-stone-500 text-sm mt-3">
-            Maximum of {MAX_GUARDIANS} guardians reached.
-          </p>
+          <p className="text-stone-500 text-sm mt-3">Maximum of {MAX_GUARDIANS} guardians reached.</p>
         )}
 
         {txMsg && (
@@ -274,20 +270,51 @@ export function GuardianManager({ vault, vaultPda, guardians, onRefresh }: Guard
             aria-live="polite"
             className="mt-4 p-3 rounded-lg text-sm"
             style={{
-              background: txMsg.type === "success"
-                ? "rgba(16,185,129,0.1)"
-                : "rgba(239,68,68,0.1)",
-              color: txMsg.type === "success"
-                ? "var(--zone-green)"
-                : "var(--zone-red)",
-              border: `1px solid ${txMsg.type === "success" ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`,
+              background: txMsg.type === "success" ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)",
+              color:      txMsg.type === "success" ? "var(--zone-green)"    : "var(--zone-red)",
+              border:     `1px solid ${txMsg.type === "success" ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`,
             }}
           >
             {txMsg.text}
           </div>
         )}
       </div>
+
+      {/* Guardian invite link */}
+      {lastAddedGuardian && (
+        <div
+          className="card mt-3 animate-slide-up"
+          style={{ borderColor: "rgba(129,140,248,0.3)", background: "rgba(129,140,248,0.04)" }}
+        >
+          <h3 className="font-display text-lg text-cream mb-1">Guardian Added</h3>
+          <p className="text-stone-400 text-sm mb-3">
+            Share this link with{" "}
+            <span className="address">{shortAddress(lastAddedGuardian, 6)}</span>{" "}
+            so they can access the guardian view for this vault.
+          </p>
+          <p className="text-stone-500 text-xs mb-3">
+            Note: Guardians are added unilaterally by the owner. The invite link opens the vault page
+            where they can see their active guardian status and use guardian features.
+          </p>
+          <div className="flex items-center gap-3">
+            <code
+              className="address text-xs flex-1 p-2 rounded"
+              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", wordBreak: "break-all" }}
+            >
+              {typeof window !== "undefined"
+                ? `${window.location.origin}/vault/${vaultPda}?role=guardian`
+                : `/vault/${vaultPda}?role=guardian`}
+            </code>
+            <button
+              className="btn-secondary flex-shrink-0"
+              onClick={() => { void handleCopyInvite(); }}
+              aria-label={`Copy invite link for guardian ${shortAddress(lastAddedGuardian)}`}
+            >
+              {copiedInvite ? "✓ Copied!" : "Copy Invite Link"}
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
-

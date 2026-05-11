@@ -1,0 +1,26 @@
+{
+  "dependencies": {
+    "@cloak.dev/sdk": "^0.1.6",
+    "@legacy-protocol/cloak-integration": "^1.0.0",
+    "@legacy-protocol/sdk": "^0.3.1"
+  },
+  "scripts": {
+    "test": "jest && vitest run tests/cloak",
+    "test:anchor": "jest tests/anchor",
+    "test:math": "jest tests/math",
+    "test:sdk": "jest tests/sdk",
+    "test:shamir": "jest tests/shamir",
+    "test:watcher": "jest tests/watcher",
+    "test:relayer": "jest tests/relayer",
+    "test:integration": "jest tests/integration",
+    "test:cloak": "vitest run tests/cloak"
+  },
+  "devDependencies": {
+    "jest": "^29",
+    "ts-jest": "^29",
+    "@types/jest": "^29",
+    "vitest": "^1",
+    "solana-bankrun": "^0.3",
+    "anchor-bankrun": "^0.4"
+  }
+}

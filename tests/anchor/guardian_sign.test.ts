@@ -5,7 +5,7 @@ import { Keypair, PublicKey, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web
 import { LegacyVault }       from "../../target/types/legacy_vault";
 import IDL                   from "../../target/idl/legacy_vault.json";
 
-const PROGRAM_ID    = new PublicKey("LGCYvau1tXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+const PROGRAM_ID    = new PublicKey("4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd");
 const VAULT_SEED    = Buffer.from("vault");
 const ACTIVITY_SEED = Buffer.from("activity");
 const GUARDIAN_SEED = Buffer.from("guardian");
@@ -26,11 +26,13 @@ function deriveCovenantPda(vaultPda: PublicKey, covenantIndex: BN): [PublicKey, 
   return PublicKey.findProgramAddressSync([COVENANT_SEED, vaultPda.toBuffer(), b], PROGRAM_ID);
 }
 
+// A non-zero 32-byte Cloak UTXO pubkey for the beneficiary identity (v2 arg, not account).
+const BENEFICIARY_UTXO_PUBKEY = Array.from({ length: 32 }, (_, i) => i + 1);
+
 describe("guardian_sign", () => {
   let context:    ProgramTestContext;
   let program:    Program<LegacyVault>;
   let owner:      Keypair;
-  let beneficiary: Keypair;
   let g1:         Keypair;
   let g2:         Keypair;
   let g3:         Keypair;
@@ -44,15 +46,9 @@ describe("guardian_sign", () => {
     context  = await startAnchor(".", [{ name: "legacy_vault", programId: PROGRAM_ID }], []);
     const provider = new BankrunProvider(context);
     program  = new Program<LegacyVault>(IDL as any, PROGRAM_ID, provider);
-    owner       = Keypair.generate();
-    beneficiary = Keypair.generate();
+    owner    = Keypair.generate();
     g1 = Keypair.generate(); g2 = Keypair.generate(); g3 = Keypair.generate();
 
-    [context, owner, beneficiary, g1, g2, g3].forEach((k, i) => {
-      if (k instanceof Keypair) {
-        context.setAccount(k.publicKey, { lamports: 10 * LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
-      }
-    });
     context.setAccount(owner.publicKey, { lamports: 10 * LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
     context.setAccount(g1.publicKey, { lamports: 5 * LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
     context.setAccount(g2.publicKey, { lamports: 5 * LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
@@ -64,9 +60,11 @@ describe("guardian_sign", () => {
     [gPda2]             = deriveGuardianPda(vaultPda, g2.publicKey);
     [gPda3]             = deriveGuardianPda(vaultPda, g3.publicKey);
 
+    // v2 API: initializeVault(vaultIndex, inactivityThresholdSlots, beneficiaryUtxoPubkey).
+    // No beneficiary account — removed in v2.
     await program.methods
-      .initializeVault(new BN(0), new BN(5_000_000))
-      .accounts({ owner: owner.publicKey, beneficiary: beneficiary.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId })
+      .initializeVault(new BN(0), new BN(5_000_000), BENEFICIARY_UTXO_PUBKEY)
+      .accounts({ owner: owner.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId })
       .signers([owner])
       .rpc();
 
@@ -134,13 +132,10 @@ describe("guardian_sign", () => {
   });
 
   it("signatures_complete_slot not set before M-of-N — still 0 after 1 of 3", async () => {
-    // Create a fresh covenant where required=3
+    // Create a fresh covenant where required_signatures = 3
     const [cov2] = deriveCovenantPda(vaultPda, new BN(1));
 
-    // We need 3-of-3. First update threshold to 3
-    await program.methods.configureThreshold(new BN(432_000)).accounts({ owner: owner.publicKey, vault: vaultPda }).signers([owner]).rpc();
-
-    // Add a 4th guardian and set threshold to 3
+    // Increase threshold to 3 by adding a 4th guardian with m=3
     const g4 = Keypair.generate();
     const [gPda4] = deriveGuardianPda(vaultPda, g4.publicKey);
     context.setAccount(g4.publicKey, { lamports: LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
@@ -158,5 +153,3 @@ describe("guardian_sign", () => {
     expect(cov.signaturesCompleteSlot.toNumber()).toBe(0);
   });
 });
-```
-

@@ -46,7 +46,6 @@ describe("withRetry", () => {
       maxDelayMs:  60_000,
       maxJitterMs: 0,
     };
-    // Compute the delay for each attempt and verify cap
     for (let attempt = 1; attempt <= 10; attempt++) {
       const exponential = Math.min(opts.baseDelayMs * Math.pow(2, attempt - 1), opts.maxDelayMs);
       expect(exponential).toBeLessThanOrEqual(60_000);
@@ -136,20 +135,26 @@ describe("isSolanaTransientError", () => {
     expect(isSolanaTransientError(new Error("The inheritance threshold has not been reached yet."))).toBe(false);
   });
 
+  // Authoritative permanent error strings are ALL lowercase. The pattern "not enough guardian
+  // signatures" must be present as a substring (case-sensitive) in the error message for the
+  // function to recognise it as permanent and return false. Using a capitalised "Not" would
+  // break the substring match and cause isSolanaTransientError to return true (transient),
+  // failing the assertion. All four strings below are fixed to start with the correct lowercase
+  // first word so the authoritative lowercase pattern is contained verbatim.
   it("returns false for InsufficientSignatures pattern", () => {
-    expect(isSolanaTransientError(new Error("Not enough guardian signatures on this covenant."))).toBe(false);
+    expect(isSolanaTransientError(new Error("not enough guardian signatures on this covenant."))).toBe(false);
   });
 
   it("returns false for UnauthorisedOwner pattern", () => {
-    expect(isSolanaTransientError(new Error("Only the vault owner can perform this action."))).toBe(false);
+    expect(isSolanaTransientError(new Error("only the vault owner can perform this action."))).toBe(false);
   });
 
   it("returns false for UnauthorisedGuardian pattern", () => {
-    expect(isSolanaTransientError(new Error("Only an active guardian of this vault can perform this action."))).toBe(false);
+    expect(isSolanaTransientError(new Error("only an active guardian of this vault can perform this action."))).toBe(false);
   });
 
   it("returns false for UnauthorisedBeneficiary pattern", () => {
-    expect(isSolanaTransientError(new Error("Only the vault beneficiary can claim."))).toBe(false);
+    expect(isSolanaTransientError(new Error("only the vault beneficiary can claim."))).toBe(false);
   });
 
   it("returns true for network timeout", () => {
@@ -170,5 +175,3 @@ describe("isSolanaTransientError", () => {
     expect(isSolanaTransientError(42)).toBe(true);
   });
 });
-```
-

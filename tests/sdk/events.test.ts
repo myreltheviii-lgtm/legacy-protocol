@@ -1,3 +1,12 @@
+// tests/sdk/events.test.ts
+//
+// Tests for all 19 event parsers in sdk/src/events.ts.
+// Framework: Jest.
+//
+// All 17 original event parsers plus the 2 Cloak integration event parsers
+// (parseCloakDepositRecordedEvent, parseInheritanceCloakClaimedEvent) are
+// tested individually and in the parseLegacyEventsFromLogs batch.
+
 import { createHash } from "node:crypto";
 import { PublicKey }  from "@solana/web3.js";
 import {
@@ -18,6 +27,8 @@ import {
   parseBeneficiaryChangedEvent,
   parseGuardianRemovedByCovenantEvent,
   parseOrphanedCovenantClosedEvent,
+  parseCloakDepositRecordedEvent,
+  parseInheritanceCloakClaimedEvent,
   parseLegacyEventFromLog,
   parseLegacyEventsFromLogs,
 } from "../../sdk/src/events";
@@ -44,6 +55,11 @@ class Writer {
     return this;
   }
 
+  // CRITICAL: n must be a number, NOT a string enum value.
+  // CovenantType is a string enum — passing CovenantType.BeneficiaryChange (= "BeneficiaryChange")
+  // would result in "BeneficiaryChange" & 0xff = NaN & 0xff = 0, silently writing byte 0
+  // (EmergencySweep) instead of byte 1 (BeneficiaryChange). Always pass the numeric
+  // discriminant directly (0, 1, or 2).
   u8(n: number): this {
     this.parts.push(Buffer.from([n & 0xff]));
     return this;
@@ -51,6 +67,18 @@ class Writer {
 
   bool(v: boolean): this {
     this.parts.push(Buffer.from([v ? 1 : 0]));
+    return this;
+  }
+
+  // Writes raw 32 bytes — used for [u8;32] fields (utxo commitments, UTXO pubkeys).
+  bytes32(arr: Uint8Array): this {
+    this.parts.push(Buffer.from(arr.slice(0, 32)));
+    return this;
+  }
+
+  // Writes raw 64 bytes — used for [u8;64] fields (Cloak transfer signatures).
+  bytes64(arr: Uint8Array): this {
+    this.parts.push(Buffer.from(arr.slice(0, 64)));
     return this;
   }
 
@@ -64,6 +92,12 @@ const OWNER    = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 const BEN      = new PublicKey("11111111111111111111111111111112");
 const GUARDIAN = new PublicKey("11111111111111111111111111111113");
 const COVENANT = new PublicKey("11111111111111111111111111111114");
+
+// Covenant type numeric discriminants — must be used instead of the string enum
+// when writing bytes to buffers. CovenantType string values coerce to NaN → 0.
+const COVENANT_TYPE_EMERGENCY_SWEEP    = 0; // CovenantType.EmergencySweep
+const COVENANT_TYPE_BENEFICIARY_CHANGE = 1; // CovenantType.BeneficiaryChange
+const COVENANT_TYPE_GUARDIAN_REMOVAL   = 2; // CovenantType.GuardianRemoval
 
 // ── Individual parsers ────────────────────────────────────────────────────────
 
@@ -82,7 +116,7 @@ describe("parseVaultInitialisedEvent", () => {
     expect(event!.name).toBe("VaultInitialised");
     expect(event!.vault).toBe(VAULT.toBase58());
     expect(event!.owner).toBe(OWNER.toBase58());
-    expect(event!.beneficiary).toBe(BEN.toBase58());
+    expect((event as any).beneficiaryUtxoPubkey).toBe(BEN.toBuffer().toString("hex"));
     expect((event as any).thresholdSlots).toBe(5_000_000n);
     expect((event as any).createdSlot).toBe(100n);
   });
@@ -303,11 +337,12 @@ describe("parseGuardianRemovedEvent", () => {
 });
 
 describe("parseCovenantCreatedEvent", () => {
-  it("parses covenant_type and covenant_index correctly", () => {
+  it("parses covenant_type EmergencySweep (byte 0) and covenant_index correctly", () => {
+    // Use numeric discriminant 0 for EmergencySweep.
     const data = new Writer()
       .pubkey(VAULT)
       .pubkey(COVENANT)
-      .u8(CovenantType.EmergencySweep)
+      .u8(COVENANT_TYPE_EMERGENCY_SWEEP) // 0
       .u64(0n)
       .u8(2)
       .pubkey(GUARDIAN)
@@ -319,6 +354,37 @@ describe("parseCovenantCreatedEvent", () => {
     expect((event as any).covenantType).toBe(CovenantType.EmergencySweep);
     expect((event as any).covenantIndex).toBe(0n);
     expect((event as any).requiredSigs).toBe(2);
+  });
+
+  it("parses covenant_type BeneficiaryChange (byte 1) correctly", () => {
+    const data = new Writer()
+      .pubkey(VAULT)
+      .pubkey(COVENANT)
+      .u8(COVENANT_TYPE_BENEFICIARY_CHANGE) // 1
+      .u64(3n)
+      .u8(2)
+      .pubkey(GUARDIAN)
+      .build("CovenantCreated");
+
+    const event = parseCovenantCreatedEvent(data);
+    expect(event).not.toBeNull();
+    expect((event as any).covenantType).toBe(CovenantType.BeneficiaryChange);
+    expect((event as any).covenantIndex).toBe(3n);
+  });
+
+  it("parses covenant_type GuardianRemoval (byte 2) correctly", () => {
+    const data = new Writer()
+      .pubkey(VAULT)
+      .pubkey(COVENANT)
+      .u8(COVENANT_TYPE_GUARDIAN_REMOVAL) // 2
+      .u64(1n)
+      .u8(1)
+      .pubkey(GUARDIAN)
+      .build("CovenantCreated");
+
+    const event = parseCovenantCreatedEvent(data);
+    expect(event).not.toBeNull();
+    expect((event as any).covenantType).toBe(CovenantType.GuardianRemoval);
   });
 });
 
@@ -342,12 +408,16 @@ describe("parseCovenantSignedEvent", () => {
 });
 
 describe("parseBeneficiaryChangedEvent", () => {
-  it("parses old and new beneficiary correctly", () => {
+  it("parses oldBeneficiaryUtxoPubkey and newBeneficiaryUtxoPubkey as hex strings", () => {
+    // On-chain struct: vault(Pubkey), old_beneficiary_utxo_pubkey([u8;32]),
+    // new_beneficiary_utxo_pubkey([u8;32]), covenant(Pubkey), executed_slot(u64).
+    // [u8;32] and Pubkey have identical 32-byte wire representation, so .pubkey()
+    // correctly writes the bytes the parser then reads via .bytes32Hex() as hex.
     const newBen = new PublicKey("11111111111111111111111111111115");
     const data = new Writer()
       .pubkey(VAULT)
-      .pubkey(BEN)
-      .pubkey(newBen)
+      .pubkey(BEN)        // old_beneficiary_utxo_pubkey as [u8;32]
+      .pubkey(newBen)     // new_beneficiary_utxo_pubkey as [u8;32]
       .pubkey(COVENANT)
       .u64(6_000_000n)
       .build("BeneficiaryChanged");
@@ -355,8 +425,11 @@ describe("parseBeneficiaryChangedEvent", () => {
     const event = parseBeneficiaryChangedEvent(data);
     expect(event).not.toBeNull();
     expect(event!.name).toBe("BeneficiaryChanged");
-    expect((event as any).oldBeneficiary).toBe(BEN.toBase58());
-    expect((event as any).newBeneficiary).toBe(newBen.toBase58());
+    // Field names are oldBeneficiaryUtxoPubkey and newBeneficiaryUtxoPubkey (hex strings).
+    // The parser reads [u8;32] as bytes32Hex(), producing the 64-char hex of the pubkey bytes.
+    expect((event as any).oldBeneficiaryUtxoPubkey).toBe(BEN.toBuffer().toString("hex"));
+    expect((event as any).newBeneficiaryUtxoPubkey).toBe(newBen.toBuffer().toString("hex"));
+    expect((event as any).covenant).toBe(COVENANT.toBase58());
     expect((event as any).executedSlot).toBe(6_000_000n);
   });
 });
@@ -383,13 +456,14 @@ describe("parseGuardianRemovedByCovenantEvent", () => {
 });
 
 describe("parseOrphanedCovenantClosedEvent", () => {
-  it("parses covenant_index and covenant_type correctly", () => {
+  it("parses covenant_index and covenant_type BeneficiaryChange (byte 1) correctly", () => {
+    // CRITICAL: Must use numeric discriminant 1 for BeneficiaryChange.
     const CALLER = new PublicKey("11111111111111111111111111111116");
     const data = new Writer()
       .pubkey(VAULT)
       .pubkey(COVENANT)
       .u64(3n)
-      .u8(CovenantType.BeneficiaryChange)
+      .u8(COVENANT_TYPE_BENEFICIARY_CHANGE) // 1 — must NOT be CovenantType.BeneficiaryChange
       .pubkey(CALLER)
       .u64(5_200_000n)
       .build("OrphanedCovenantClosed");
@@ -400,6 +474,141 @@ describe("parseOrphanedCovenantClosedEvent", () => {
     expect((event as any).covenantIndex).toBe(3n);
     expect((event as any).covenantType).toBe(CovenantType.BeneficiaryChange);
     expect((event as any).closedSlot).toBe(5_200_000n);
+  });
+
+  it("parses covenant_type EmergencySweep (byte 0) correctly", () => {
+    const CALLER2 = new PublicKey("11111111111111111111111111111117");
+    const data = new Writer()
+      .pubkey(VAULT)
+      .pubkey(COVENANT)
+      .u64(0n)
+      .u8(COVENANT_TYPE_EMERGENCY_SWEEP) // 0
+      .pubkey(CALLER2)
+      .u64(5_300_000n)
+      .build("OrphanedCovenantClosed");
+
+    const event = parseOrphanedCovenantClosedEvent(data);
+    expect(event).not.toBeNull();
+    expect((event as any).covenantType).toBe(CovenantType.EmergencySweep);
+  });
+
+  it("parses covenant_type GuardianRemoval (byte 2) correctly", () => {
+    const CALLER3 = new PublicKey("11111111111111111111111111111118");
+    const data = new Writer()
+      .pubkey(VAULT)
+      .pubkey(COVENANT)
+      .u64(5n)
+      .u8(COVENANT_TYPE_GUARDIAN_REMOVAL) // 2
+      .pubkey(CALLER3)
+      .u64(5_400_000n)
+      .build("OrphanedCovenantClosed");
+
+    const event = parseOrphanedCovenantClosedEvent(data);
+    expect(event).not.toBeNull();
+    expect((event as any).covenantType).toBe(CovenantType.GuardianRemoval);
+  });
+});
+
+// ── Cloak integration event parsers ──────────────────────────────────────────
+//
+// These two parsers were added with record_cloak_deposit / record_cloak_claim.
+// They are part of ALL_PARSERS so parseLegacyEventsFromLogs dispatches to them.
+
+describe("parseCloakDepositRecordedEvent", () => {
+  it("parses all 6 fields correctly", () => {
+    // On-chain struct: vault(Pubkey), owner(Pubkey), utxo_commitment([u8;32]),
+    // utxo_leaf_index(u64), lamports(u64), total_lamports(u64).
+    const utxoCommitment = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) utxoCommitment[i] = (0x11 + i) & 0xff;
+
+    const data = new Writer()
+      .pubkey(VAULT)
+      .pubkey(OWNER)
+      .bytes32(utxoCommitment)
+      .u64(42n)
+      .u64(1_000_000_000n)
+      .u64(2_000_000_000n)
+      .build("CloakDepositRecorded");
+
+    const event = parseCloakDepositRecordedEvent(data);
+    expect(event).not.toBeNull();
+    expect(event!.name).toBe("CloakDepositRecorded");
+    expect(event!.vault).toBe(VAULT.toBase58());
+    expect((event as any).owner).toBe(OWNER.toBase58());
+    expect((event as any).utxoCommitment).toBe(Buffer.from(utxoCommitment).toString("hex"));
+    expect((event as any).utxoLeafIndex).toBe(42n);
+    expect((event as any).lamports).toBe(1_000_000_000n);
+    expect((event as any).totalLamports).toBe(2_000_000_000n);
+  });
+
+  it("returns null for wrong discriminator", () => {
+    const data = new Writer().pubkey(VAULT).pubkey(OWNER).build("VaultClosed");
+    expect(parseCloakDepositRecordedEvent(data)).toBeNull();
+  });
+
+  it("does not throw on malformed data — returns null", () => {
+    const bad = Buffer.alloc(4, 0xff);
+    expect(() => parseCloakDepositRecordedEvent(bad)).not.toThrow();
+    expect(parseCloakDepositRecordedEvent(bad)).toBeNull();
+  });
+});
+
+describe("parseInheritanceCloakClaimedEvent", () => {
+  it("parses all 5 fields correctly", () => {
+    // On-chain struct: vault(Pubkey), beneficiary_utxo_pubkey([u8;32]),
+    // lamports(u64), cloak_transfer_signature([u8;64]), claimed_slot(u64).
+    const beneficiaryUtxoPubkey = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) beneficiaryUtxoPubkey[i] = (0x22 + i) & 0xff;
+
+    const cloakSig = new Uint8Array(64);
+    for (let i = 0; i < 64; i++) cloakSig[i] = (0xab + i) & 0xff;
+
+    const data = new Writer()
+      .pubkey(VAULT)
+      .bytes32(beneficiaryUtxoPubkey)
+      .u64(1_500_000_000n)
+      .bytes64(cloakSig)
+      .u64(5_100_000n)
+      .build("InheritanceCloakClaimed");
+
+    const event = parseInheritanceCloakClaimedEvent(data);
+    expect(event).not.toBeNull();
+    expect(event!.name).toBe("InheritanceCloakClaimed");
+    expect(event!.vault).toBe(VAULT.toBase58());
+    expect((event as any).beneficiaryUtxoPubkey).toBe(Buffer.from(beneficiaryUtxoPubkey).toString("hex"));
+    expect((event as any).lamports).toBe(1_500_000_000n);
+    expect((event as any).cloakTransferSignature).toBe(Buffer.from(cloakSig).toString("hex"));
+    expect((event as any).claimedSlot).toBe(5_100_000n);
+  });
+
+  it("all 64 cloak_transfer_signature bytes preserved — no truncation", () => {
+    const distinctSig = new Uint8Array(64);
+    for (let i = 0; i < 64; i++) distinctSig[i] = (0xde + i * 13) & 0xff;
+    const beneficiaryUtxoPubkey = new Uint8Array(32).fill(0x01);
+
+    const data = new Writer()
+      .pubkey(VAULT)
+      .bytes32(beneficiaryUtxoPubkey)
+      .u64(500_000_000n)
+      .bytes64(distinctSig)
+      .u64(6_000_000n)
+      .build("InheritanceCloakClaimed");
+
+    const event = parseInheritanceCloakClaimedEvent(data);
+    expect(event).not.toBeNull();
+    expect((event as any).cloakTransferSignature).toBe(Buffer.from(distinctSig).toString("hex"));
+    expect((event as any).cloakTransferSignature.length).toBe(128); // 64 bytes = 128 hex chars
+  });
+
+  it("returns null for wrong discriminator", () => {
+    const data = new Writer().pubkey(VAULT).pubkey(OWNER).build("VaultClosed");
+    expect(parseInheritanceCloakClaimedEvent(data)).toBeNull();
+  });
+
+  it("does not throw on malformed data — returns null", () => {
+    const bad = Buffer.alloc(4, 0xff);
+    expect(() => parseInheritanceCloakClaimedEvent(bad)).not.toThrow();
+    expect(parseInheritanceCloakClaimedEvent(bad)).toBeNull();
   });
 });
 
@@ -442,23 +651,91 @@ describe("parseLegacyEventFromLog", () => {
 });
 
 describe("parseLegacyEventsFromLogs", () => {
-  it("parses all 17 event types from a batch of log lines", () => {
-    const vaultClosedData = new Writer().pubkey(VAULT).pubkey(OWNER).build("VaultClosed");
-    const checkInData = new Writer()
-      .pubkey(VAULT).pubkey(OWNER).u64(1000n).u64(100n).u64(5n)
-      .build("CheckedIn");
+  it("parses all 19 event types from a batch of log lines (17 original + 2 Cloak)", () => {
+    // Build one valid log line for each of the 19 event types and verify all are parsed.
+    const newBen   = new PublicKey("11111111111111111111111111111115");
+    const CALLER   = new PublicKey("11111111111111111111111111111116");
 
-    const logs = [
-      "Program log: Instruction: CloseVault",
-      `Program data: ${vaultClosedData.toString("base64")}`,
-      "Program log: something else",
-      `Program data: ${checkInData.toString("base64")}`,
+    const utxoCommitment        = new Uint8Array(32).fill(0x33);
+    const beneficiaryUtxoPubkey = new Uint8Array(32).fill(0x44);
+    const cloakSig              = new Uint8Array(64).fill(0xab);
+
+    const eventBuffers: Buffer[] = [
+      // 1. VaultInitialised
+      new Writer().pubkey(VAULT).pubkey(OWNER).pubkey(BEN).u64(5_000_000n).u64(100n).build("VaultInitialised"),
+      // 2. CheckedIn
+      new Writer().pubkey(VAULT).pubkey(OWNER).u64(500n).u64(100n).u64(3n).build("CheckedIn"),
+      // 3. InheritanceTriggered
+      new Writer().pubkey(VAULT).pubkey(OWNER).pubkey(BEN).u64(5_000_100n).u64(100n).u64(1_000_000_000n).build("InheritanceTriggered"),
+      // 4. InheritanceClaimed
+      new Writer().pubkey(VAULT).pubkey(BEN).u64(2_000_000_000n).u64(5_500_000n).build("InheritanceClaimed"),
+      // 5. EmergencySwept
+      new Writer().pubkey(VAULT).pubkey(BEN).u64(3_000_000_000n).u64(5_000_200n).pubkey(COVENANT).build("EmergencySwept"),
+      // 6. AnomalyFlagged
+      new Writer().pubkey(VAULT).pubkey(GUARDIAN).u64(4_500_000n).u64(1_000_000n).u64(5n).build("AnomalyFlagged"),
+      // 7. ThresholdUpdated
+      new Writer().pubkey(VAULT).u64(5_000_000n).u64(10_000_000n).build("ThresholdUpdated"),
+      // 8. Deposited
+      new Writer().pubkey(VAULT).u64(500_000_000n).u64(1_000_000_000n).build("Deposited"),
+      // 9. VaultClosed
+      new Writer().pubkey(VAULT).pubkey(OWNER).build("VaultClosed"),
+      // 10. GuardianAdded
+      new Writer().pubkey(VAULT).pubkey(GUARDIAN).u8(3).u8(2).build("GuardianAdded"),
+      // 11. GuardianRemovalInitiated
+      new Writer().pubkey(VAULT).pubkey(GUARDIAN).u64(1_000_000n).u64(1_216_000n).build("GuardianRemovalInitiated"),
+      // 12. GuardianRemoved
+      new Writer().pubkey(VAULT).pubkey(GUARDIAN).u8(2).u8(2).bool(false).build("GuardianRemoved"),
+      // 13. CovenantCreated — numeric discriminant 0 for EmergencySweep
+      new Writer().pubkey(VAULT).pubkey(COVENANT).u8(COVENANT_TYPE_EMERGENCY_SWEEP).u64(0n).u8(2).pubkey(GUARDIAN).build("CovenantCreated"),
+      // 14. CovenantSigned
+      new Writer().pubkey(VAULT).pubkey(COVENANT).pubkey(GUARDIAN).u8(2).u8(2).bool(true).build("CovenantSigned"),
+      // 15. BeneficiaryChanged
+      new Writer().pubkey(VAULT).pubkey(BEN).pubkey(newBen).pubkey(COVENANT).u64(6_000_000n).build("BeneficiaryChanged"),
+      // 16. GuardianRemovedByCovenant
+      new Writer().pubkey(VAULT).pubkey(GUARDIAN).pubkey(COVENANT).u8(2).u8(2).bool(false).u64(5_100_000n).build("GuardianRemovedByCovenant"),
+      // 17. OrphanedCovenantClosed — numeric discriminant 1 for BeneficiaryChange
+      new Writer().pubkey(VAULT).pubkey(COVENANT).u64(3n).u8(COVENANT_TYPE_BENEFICIARY_CHANGE).pubkey(CALLER).u64(5_200_000n).build("OrphanedCovenantClosed"),
+      // 18. CloakDepositRecorded
+      new Writer().pubkey(VAULT).pubkey(OWNER).bytes32(utxoCommitment).u64(42n).u64(1_000_000_000n).u64(1_000_000_000n).build("CloakDepositRecorded"),
+      // 19. InheritanceCloakClaimed
+      new Writer().pubkey(VAULT).bytes32(beneficiaryUtxoPubkey).u64(1_500_000_000n).bytes64(cloakSig).u64(5_100_000n).build("InheritanceCloakClaimed"),
     ];
 
+    const expectedNames = [
+      "VaultInitialised",
+      "CheckedIn",
+      "InheritanceTriggered",
+      "InheritanceClaimed",
+      "EmergencySwept",
+      "AnomalyFlagged",
+      "ThresholdUpdated",
+      "Deposited",
+      "VaultClosed",
+      "GuardianAdded",
+      "GuardianRemovalInitiated",
+      "GuardianRemoved",
+      "CovenantCreated",
+      "CovenantSigned",
+      "BeneficiaryChanged",
+      "GuardianRemovedByCovenant",
+      "OrphanedCovenantClosed",
+      "CloakDepositRecorded",
+      "InheritanceCloakClaimed",
+    ];
+
+    // Build a log array interleaved with noise to verify filtering
+    const logs: string[] = [];
+    for (const buf of eventBuffers) {
+      logs.push("Program log: noise line");
+      logs.push(`Program data: ${buf.toString("base64")}`);
+    }
+
     const events = parseLegacyEventsFromLogs(logs);
-    expect(events.length).toBe(2);
-    expect(events[0].name).toBe("VaultClosed");
-    expect(events[1].name).toBe("CheckedIn");
+    expect(events.length).toBe(19);
+
+    for (let i = 0; i < 19; i++) {
+      expect(events[i].name).toBe(expectedNames[i]);
+    }
   });
 
   it("returns empty array when no program data logs", () => {
@@ -469,11 +746,15 @@ describe("parseLegacyEventsFromLogs", () => {
   it("skips non-program-data lines without throwing", () => {
     expect(() => parseLegacyEventsFromLogs(["not a valid log", "", "also nothing"])).not.toThrow();
   });
+
+  it("returns empty array for empty log array", () => {
+    expect(parseLegacyEventsFromLogs([])).toEqual([]);
+  });
 });
 
-// ── All 17 events: parse success + malformed input ───────────────────────────
+// ── All 19 events: parse success + malformed input ────────────────────────────
 
-describe("all 17 events: malformed input returns null, does not throw", () => {
+describe("all 19 events: malformed input returns null, does not throw", () => {
   const parsers = [
     parseVaultInitialisedEvent,
     parseCheckedInEvent,
@@ -492,6 +773,8 @@ describe("all 17 events: malformed input returns null, does not throw", () => {
     parseBeneficiaryChangedEvent,
     parseGuardianRemovedByCovenantEvent,
     parseOrphanedCovenantClosedEvent,
+    parseCloakDepositRecordedEvent,
+    parseInheritanceCloakClaimedEvent,
   ];
 
   const malformed = Buffer.alloc(4, 0xff); // too short, bad discriminator

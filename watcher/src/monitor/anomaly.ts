@@ -21,6 +21,17 @@
 // per-submission AnchorProvider whose wallet IS the guardian keypair, making
 // the guardian both the instruction signer and the fee payer in one account
 // entry (web3.js automatically marks the fee payer as writable).
+//
+// QVAC integration (surgical addition):
+//   When isAnomalous() returns true, the pipeline does NOT submit the flag
+//   immediately. Instead:
+//     1. querySimilarTriggered() queries the RAG store for historically
+//        similar vaults that have triggered inheritance.
+//     2. buildVaultBehavior() constructs the behavioral metadata struct.
+//     3. analyzeVaultAnomaly() runs the LLM against the behavioral profile.
+//     4. qvacResult.shouldAlert gates the flag submission — false means no
+//        on-chain transaction is submitted regardless of the math result.
+//   The AnomalyEvaluation return shape is preserved exactly.
 
 import {
   Connection,
@@ -37,6 +48,11 @@ import {
 import { getStore }        from "../db/store";
 import { getSigningPool }  from "../signing_pool";
 import { logger }          from "../logger";
+import {
+  analyzeVaultAnomaly,
+  buildVaultBehavior,
+} from "./qvac_anomaly";
+import { querySimilarTriggered, SIMILARITY_THRESHOLD, TOP_K } from "./qvac_rag";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -66,6 +82,7 @@ export interface AnomalyEvaluation {
  *   2. It has not already been flagged on-chain (activity.anomalyFlagged == false).
  *   3. It has not yet reached the full inactivity threshold (still in Green/Yellow
  *      zone — if it is already Orange/Red, progressive warnings handle it).
+ *   4. The QVAC LLM analysis returns shouldAlert: true for this behavioral pattern.
  *
  * Returns one AnomalyEvaluation per vault for upstream logging.
  */
@@ -111,6 +128,10 @@ export async function evaluateAllAnomalies(
 
 /**
  * Evaluates and optionally flags a single vault.
+ *
+ * QVAC gate: when isAnomalous() returns true, the RAG store is queried first
+ * for similar triggered vaults, then the LLM analyses the behavioral profile.
+ * Only if qvacResult.shouldAlert is true does flag submission proceed.
  */
 async function evaluateSingleAnomaly(
   connection: Connection,
@@ -146,16 +167,48 @@ async function evaluateSingleAnomaly(
     return { ...base, flagSubmitted: false, alreadyFlagged: false, noAnomaly: true };
   }
 
-  // An anomaly is detected. Submit the on-chain flag.
+  // Mathematical anomaly confirmed. Run the QVAC pipeline before submitting.
+  //
+  // Step 1: RAG lookup — query for behaviorally similar vaults that have
+  // triggered inheritance. The vault address, similarity threshold, and topK
+  // are passed explicitly so the RAG store can retrieve the vault's stored
+  // behavioral profile and perform the cosine similarity search against the
+  // corpus. Returns 0 if the vault has not yet been ingested.
+  const similarTriggeredVaults = await querySimilarTriggered(
+    vault.vaultAddress,
+    SIMILARITY_THRESHOLD,
+    TOP_K,
+  );
+
+  // Step 2: Build the full behavioral profile with the real RAG count.
+  const behavior = buildVaultBehavior(vault, state, similarTriggeredVaults);
+
+  // Step 3: LLM analysis — returns a validated QVACAnomalyResult.
+  const qvacResult = await analyzeVaultAnomaly(vault, state, behavior);
+
   logger.warn(
     {
-      vault:          vault.vaultAddress,
-      elapsedSlots:   state.elapsedSlots.toString(),
-      checkinCount:   vault.checkinCount,
-      sumOfIntervals: vault.sumOfIntervals,
+      vault:                 vault.vaultAddress,
+      elapsedSlots:          state.elapsedSlots.toString(),
+      checkinCount:          vault.checkinCount,
+      sumOfIntervals:        vault.sumOfIntervals,
+      similarTriggeredVaults,
+      qvacRiskLevel:         qvacResult.riskLevel,
+      qvacShouldAlert:       qvacResult.shouldAlert,
+      qvacConfidence:        qvacResult.confidenceScore,
+      qvacReasoning:         qvacResult.reasoning,
     },
-    "Statistical anomaly detected — submitting on-chain flag",
+    "Statistical anomaly detected — QVAC analysis complete",
   );
+
+  // Step 4: QVAC gates flag submission. shouldAlert: false → no on-chain tx.
+  if (!qvacResult.shouldAlert) {
+    logger.info(
+      { vault: vault.vaultAddress, riskLevel: qvacResult.riskLevel },
+      "QVAC: shouldAlert false — suppressing on-chain anomaly flag",
+    );
+    return { ...base, flagSubmitted: false, alreadyFlagged: false, noAnomaly: false };
+  }
 
   try {
     await submitAnomalyFlag(connection, program, vault);
@@ -243,7 +296,10 @@ async function submitAnomalyFlag(
   const guardianProvider = new AnchorProvider(connection, guardianWallet, {
     commitment: "confirmed",
   });
-  const guardianProgram = new Program<any>({ ...program.idl, address: program.programId.toBase58(), metadata: { name: "legacy_vault", version: "0.1.0", spec: "0.1.0" } } as any, guardianProvider) as Program<any>;
+  const guardianProgram = new Program<any>(
+    { ...program.idl, address: program.programId.toBase58(), metadata: { name: "legacy_vault", version: "0.1.0", spec: "0.1.0" } } as any,
+    guardianProvider,
+  ) as Program<any>;
 
   // Build and send the transaction using the guardian-scoped program client.
   const tx = await (guardianProgram as any).methods

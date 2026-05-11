@@ -1,5 +1,5 @@
 {
-  "address": "7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe",
+  "address": "4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd",
   "metadata": {
     "name": "legacy_vault",
     "version": "0.1.0",
@@ -105,8 +105,7 @@
       "name": "anomaly_flag",
       "docs": [
         "Any active guardian may call this when the owner's silence exceeds the",
-        "statistically expected interval. Emits an on-chain signal without",
-        "triggering inheritance."
+        "statistically expected interval."
       ],
       "discriminator": [
         0,
@@ -288,8 +287,8 @@
     {
       "name": "claim_inheritance",
       "docs": [
-        "The beneficiary calls this after the vault is triggered to receive all",
-        "lamports. Closes the activity account simultaneously."
+        "Non-shielded vaults: the beneficiary calls this to receive all lamports.",
+        "For shielded vaults, use guardians + record_cloak_claim instead."
       ],
       "discriminator": [
         250,
@@ -305,10 +304,7 @@
         {
           "name": "beneficiary",
           "writable": true,
-          "signer": true,
-          "relations": [
-            "vault"
-          ]
+          "signer": true
         },
         {
           "name": "vault",
@@ -727,7 +723,8 @@
     {
       "name": "deposit",
       "docs": [
-        "Transfers lamports from the owner into the vault PDA."
+        "Transfers lamports from the owner into the vault PDA.",
+        "For Cloak-shielded vaults, use record_cloak_deposit instead."
       ],
       "discriminator": [
         242,
@@ -791,8 +788,8 @@
     {
       "name": "emergency_sweep",
       "docs": [
-        "Executes an approved EmergencySweep covenant. Transfers all vault",
-        "lamports to the beneficiary immediately."
+        "Executes an approved EmergencySweep covenant. Non-shielded vaults only.",
+        "For shielded vaults, guardians must use the off-chain Cloak transfer."
       ],
       "discriminator": [
         172,
@@ -1132,7 +1129,9 @@
       "docs": [
         "Creates a new VaultAccount and ActivityAccount for the caller.",
         "`vault_index` allows one owner to maintain multiple vaults.",
-        "`inactivity_threshold_slots` defaults to the protocol minimum if 0."
+        "`inactivity_threshold_slots` defaults to the protocol minimum if 0.",
+        "`beneficiary_utxo_pubkey` is the 32-byte Cloak UTXO public key of the",
+        "intended beneficiary (generated client-side via generateUtxoKeypair())."
       ],
       "discriminator": [
         48,
@@ -1149,9 +1148,6 @@
           "name": "owner",
           "writable": true,
           "signer": true
-        },
-        {
-          "name": "beneficiary"
         },
         {
           "name": "vault",
@@ -1217,6 +1213,185 @@
         {
           "name": "inactivity_threshold_slots",
           "type": "u64"
+        },
+        {
+          "name": "beneficiary_utxo_pubkey",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "record_cloak_claim",
+      "docs": [
+        "Permissionless. Closes Anchor accounts after guardians have completed",
+        "the off-chain Cloak shield-to-shield inheritance transfer.",
+        "The caller receives vault + activity rent as a submission incentive."
+      ],
+      "discriminator": [
+        103,
+        4,
+        93,
+        40,
+        157,
+        82,
+        173,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Receives rent from vault + activity account closure."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.owner",
+                "account": "VaultAccount"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "activity",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  116,
+                  105,
+                  118,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "cloak_transfer_signature",
+          "type": {
+            "array": [
+              "u8",
+              64
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "record_cloak_deposit",
+      "docs": [
+        "Records an off-chain Cloak shielded deposit. The owner calls this after",
+        "successfully calling `transact()` in the Cloak SDK. No SOL moves through",
+        "this instruction — it only records the UTXO commitment for guardian use."
+      ],
+      "discriminator": [
+        246,
+        165,
+        15,
+        210,
+        129,
+        152,
+        195,
+        1
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "account",
+                "path": "vault.vault_index",
+                "account": "VaultAccount"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "utxo_commitment",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "utxo_leaf_index",
+          "type": "u64"
+        },
+        {
+          "name": "shielded_lamports",
+          "type": "u64"
         }
       ]
     },
@@ -1224,8 +1399,7 @@
       "name": "remove_guardian",
       "docs": [
         "Phase 1: initiates the removal timelock for a guardian.",
-        "Phase 2: finalises the removal after the timelock has elapsed.",
-        "Calling this instruction twice (once per phase) is intentional."
+        "Phase 2: finalises the removal after the timelock has elapsed."
       ],
       "discriminator": [
         72,
@@ -1457,6 +1631,19 @@
       ]
     },
     {
+      "name": "CloakDepositRecorded",
+      "discriminator": [
+        57,
+        14,
+        31,
+        154,
+        233,
+        130,
+        182,
+        170
+      ]
+    },
+    {
       "name": "CovenantCreated",
       "discriminator": [
         130,
@@ -1571,6 +1758,19 @@
         154,
         244,
         192
+      ]
+    },
+    {
+      "name": "InheritanceCloakClaimed",
+      "discriminator": [
+        83,
+        170,
+        195,
+        25,
+        50,
+        113,
+        191,
+        81
       ]
     },
     {
@@ -1897,12 +2097,22 @@
             "type": "pubkey"
           },
           {
-            "name": "old_beneficiary",
-            "type": "pubkey"
+            "name": "old_beneficiary_utxo_pubkey",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
-            "name": "new_beneficiary",
-            "type": "pubkey"
+            "name": "new_beneficiary_utxo_pubkey",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "covenant",
@@ -1938,6 +2148,55 @@
           },
           {
             "name": "checkin_count",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CloakDepositRecorded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "utxo_commitment",
+            "docs": [
+              "Poseidon commitment of the new UTXO in the Cloak shielded pool."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "utxo_leaf_index",
+            "docs": [
+              "Leaf position of this UTXO in Cloak's Merkle tree."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "lamports",
+            "docs": [
+              "Lamports shielded in this deposit."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_lamports",
+            "docs": [
+              "Cumulative shielded lamports across all deposits."
+            ],
             "type": "u64"
           }
         ]
@@ -2165,9 +2424,6 @@
           },
           {
             "name": "lamports",
-            "docs": [
-              "Vault lamports transferred to beneficiary (deposited funds + vault rent)."
-            ],
             "type": "u64"
           },
           {
@@ -2364,10 +2620,59 @@
           },
           {
             "name": "lamports",
+            "type": "u64"
+          },
+          {
+            "name": "claimed_slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "InheritanceCloakClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "beneficiary_utxo_pubkey",
             "docs": [
-              "Total lamports transferred: vault PDA balance + activity PDA balance."
+              "Raw 32-byte Cloak UTXO public key of the beneficiary.",
+              "This is not a Solana address — it identifies the beneficiary's",
+              "shielded identity within Cloak's circuit."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "lamports",
+            "docs": [
+              "Declared lamports transferred (not verifiable on-chain — SOL moved",
+              "through Cloak's shielded pool, not through this program)."
             ],
             "type": "u64"
+          },
+          {
+            "name": "cloak_transfer_signature",
+            "docs": [
+              "Solana transaction signature of the Cloak shield-to-shield transfer.",
+              "Allows any auditor to verify the shielded transfer occurred without",
+              "revealing amounts or counterparty identities."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
           },
           {
             "name": "claimed_slot",
@@ -2391,6 +2696,12 @@
           },
           {
             "name": "beneficiary",
+            "docs": [
+              "For shielded vaults this is the 32-byte Cloak UTXO public key of the",
+              "beneficiary, transmitted as a Pubkey for wire-format compatibility with",
+              "existing SDK event parsers. For non-shielded vaults it is the",
+              "beneficiary's Solana wallet address."
+            ],
             "type": "pubkey"
           },
           {
@@ -2478,13 +2789,27 @@
             "type": "pubkey"
           },
           {
-            "name": "beneficiary",
+            "name": "beneficiary_utxo_pubkey",
             "docs": [
-              "Wallet that will receive all lamports once the inactivity threshold is",
-              "crossed and the vault is triggered. Can only be changed by a successful",
-              "BeneficiaryChange covenant."
+              "32-byte Cloak UTXO public key for the beneficiary.",
+              "",
+              "This is NOT a Solana wallet pubkey. It is the public half of the UTXO",
+              "keypair generated by the beneficiary using `generateUtxoKeypair()` from",
+              "the Cloak SDK. Only the beneficiary knows the corresponding private key.",
+              "",
+              "For non-shielded vaults (legacy mode), this stores the raw bytes of the",
+              "beneficiary's Solana wallet pubkey so that `claim_inheritance` can still",
+              "verify identity via `Pubkey::from(vault.beneficiary_utxo_pubkey)`.",
+              "",
+              "Stored as raw bytes (not Pubkey) to accommodate Cloak's curve arithmetic",
+              "which uses a different encoding than Solana's Ed25519 addresses."
             ],
-            "type": "pubkey"
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "guardian_count",
@@ -2528,9 +2853,13 @@
           {
             "name": "deposited_lamports",
             "docs": [
-              "Total lamports currently held by this vault PDA. Kept in sync with",
-              "every deposit so instructions can read the balance without a full",
-              "lamport inspection."
+              "Total lamports declared as shielded. For Cloak vaults, this is the",
+              "amount the owner recorded via `record_cloak_deposit`. The SOL itself",
+              "resides in Cloak's shielded pool, not in this PDA — the on-chain",
+              "balance of this PDA stays at rent-exempt minimum.",
+              "",
+              "For non-shielded vaults, this tracks the lamports actually held in",
+              "this PDA (same semantics as before Cloak integration)."
             ],
             "type": "u64"
           },
@@ -2550,6 +2879,33 @@
             "type": "u64"
           },
           {
+            "name": "utxo_commitment",
+            "docs": [
+              "Poseidon commitment of the shielded UTXO recorded by `record_cloak_deposit`.",
+              "All zeros means this vault has no shielded deposit recorded yet.",
+              "",
+              "This commitment is the cryptographic proof that the vault owner",
+              "deposited into Cloak. It cannot be forged without knowledge of the",
+              "UTXO private key. Block explorers show only this 32-byte hash — not",
+              "the balance, not the depositor, not the beneficiary."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "utxo_leaf_index",
+            "docs": [
+              "Leaf index of the shielded UTXO in Cloak's Merkle tree.",
+              "Used by guardians to retrieve the correct UTXO object during",
+              "inheritance execution. Zero until `record_cloak_deposit` is called."
+            ],
+            "type": "u64"
+          },
+          {
             "name": "is_triggered",
             "docs": [
               "Set to true once `trigger_inheritance` succeeds. After this point the",
@@ -2560,7 +2916,9 @@
           {
             "name": "is_claimed",
             "docs": [
-              "Set to true once the beneficiary has successfully claimed."
+              "Set to true once the beneficiary has successfully claimed (either via",
+              "`claim_inheritance` for non-shielded vaults, or `record_cloak_claim`",
+              "after a shielded transfer)."
             ],
             "type": "bool"
           },
@@ -2625,8 +2983,17 @@
             "type": "pubkey"
           },
           {
-            "name": "beneficiary",
-            "type": "pubkey"
+            "name": "beneficiary_utxo_pubkey",
+            "docs": [
+              "Raw bytes of the beneficiary's Cloak UTXO public key.",
+              "Not a Solana address — do not attempt to load this as an account."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "threshold_slots",

@@ -1,4 +1,4 @@
-// app/src/components/CovenantFlow.tsx
+"use client";
 //
 // Multi-step covenant creation and signing interface for guardians.
 //
@@ -6,8 +6,6 @@
 // list grows immediately and the threshold-reached badge flips without waiting
 // for confirmation. After creation, the new covenant row appears immediately.
 // Both patches are reverted on error and reconciled on success.
-
-"use client";
 
 import React, { useState } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
@@ -156,7 +154,7 @@ export function CovenantFlow({
           guardian:          guardianPk,
           vaultPda:          vaultPk,
           guardianAccountPda: gaPda,
-          covenantIndex:     covenantCounter,
+          covenantPda:       covenantPdaKey,
           covenantType,
           target:            targetPk,
         })],
@@ -334,7 +332,7 @@ export function CovenantFlow({
                         {isGuardian && !hasSigned && !c.account.isExecuted && (
                           <button
                             className="btn-primary text-sm px-3 py-2"
-                            onClick={() => handleSign(c.publicKey)}
+                            onClick={() => { void handleSign(c.publicKey); }}
                             disabled={signing === c.publicKey}
                             aria-label={`Sign ${info.label} covenant`}
                           >
@@ -345,7 +343,7 @@ export function CovenantFlow({
                           c.account.covenantType !== CovenantType.EmergencySweep && (
                           <button
                             className="btn-secondary text-sm px-3 py-2"
-                            onClick={() => handleExecute(c)}
+                            onClick={() => { void handleExecute(c); }}
                             disabled={executing === c.publicKey}
                             aria-label={`Execute ${info.label} covenant`}
                           >
@@ -371,14 +369,14 @@ export function CovenantFlow({
               <fieldset>
                 <legend className="label mb-3">Select covenant type</legend>
                 <div className="space-y-3">
-                  {(Object.entries(COVENANT_TYPE_INFO) as Array<[string, typeof COVENANT_TYPE_INFO[0]]>).map(
+                  {(Object.entries(COVENANT_TYPE_INFO) as Array<[CovenantType, typeof COVENANT_TYPE_INFO[CovenantType.EmergencySweep]]>).map(
                     ([ct, info]) => (
                       <label
                         key={ct}
                         className="flex items-start gap-3 p-3 rounded-lg cursor-pointer"
                         style={{
-                          border: `1px solid ${covenantType === Number(ct) ? "var(--accent)" : "var(--border)"}`,
-                          background: covenantType === Number(ct) ? "rgba(245,158,11,0.06)" : "rgba(255,255,255,0.02)",
+                          border: `1px solid ${covenantType === ct ? "var(--accent)" : "var(--border)"}`,
+                          background: covenantType === ct ? "rgba(245,158,11,0.06)" : "rgba(255,255,255,0.02)",
                           transition: "border-color 0.15s",
                         }}
                       >
@@ -386,8 +384,8 @@ export function CovenantFlow({
                           type="radio"
                           name="covenant-type"
                           value={ct}
-                          checked={covenantType === Number(ct)}
-                          onChange={() => setCovenantType(Number(ct) as CovenantType)}
+                          checked={covenantType === ct}
+                          onChange={() => setCovenantType(ct as CovenantType)}
                           className="mt-1"
                         />
                         <div>
@@ -480,7 +478,7 @@ export function CovenantFlow({
                 <div className="flex gap-3">
                   <button
                     className="btn-primary"
-                    onClick={handleCreate}
+                    onClick={() => { void handleCreate(); }}
                     disabled={creating}
                     aria-label={`Create ${COVENANT_TYPE_INFO[covenantType].label} covenant`}
                   >
@@ -520,4 +518,3 @@ export function CovenantFlow({
     </div>
   );
 }
-

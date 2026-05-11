@@ -1,10 +1,20 @@
 // relayer/src/types/legacy_vault.ts
 //
-// The Anchor IDL type for the Legacy Vault program. This is an identical copy
-// of watcher/src/types/legacy_vault.ts. Both services carry their own copy so
-// they can be built and deployed independently without a shared package.
+// The Anchor IDL type for the Legacy Vault program (v2 — Cloak integration).
+// This is an identical copy of watcher/src/types/legacy_vault.ts. Both services
+// carry their own copy so they can be built and deployed independently without
+// a shared package. Keep both copies in sync whenever the on-chain program changes.
 //
-// Keep both copies in sync whenever the on-chain program changes.
+// CRITICAL v2 MIGRATION NOTE:
+// The v1 IDL had `beneficiary: publicKey` in vaultAccount and a `beneficiary`
+// account in initializeVault. Both are gone in v2. The v2 vaultAccount adds:
+//   - beneficiaryUtxoPubkey: [u8; 32]   (replaces beneficiary: publicKey)
+//   - utxoCommitment:        [u8; 32]   (new)
+//   - utxoLeafIndex:         u64        (new)
+//
+// This shifts the byte offset of isTriggered from [130] to [162]. Any code
+// that used the v1 IDL to deserialize v2 vault accounts would read isTriggered
+// from utxo_commitment[0] — making every trigger/claim/sweep state check wrong.
 
 export type LegacyVault = {
   version: "0.1.0";
@@ -14,15 +24,15 @@ export type LegacyVault = {
     {
       name:     "initializeVault";
       accounts: [
-        { name: "owner";          isMut: true;  isSigner: true  },
-        { name: "beneficiary";    isMut: false; isSigner: false },
-        { name: "vault";          isMut: true;  isSigner: false },
-        { name: "activity";       isMut: true;  isSigner: false },
-        { name: "systemProgram";  isMut: false; isSigner: false },
+        { name: "owner";         isMut: true;  isSigner: true  },
+        { name: "vault";         isMut: true;  isSigner: false },
+        { name: "activity";      isMut: true;  isSigner: false },
+        { name: "systemProgram"; isMut: false; isSigner: false },
       ];
       args: [
         { name: "vaultIndex";               type: "u64" },
         { name: "inactivityThresholdSlots"; type: "u64" },
+        { name: "beneficiaryUtxoPubkey";    type: { array: ["u8", 32] } },
       ];
     },
     {
@@ -103,7 +113,6 @@ export type LegacyVault = {
         { name: "caller";         isMut: true;  isSigner: true             },
         { name: "vault";          isMut: true;  isSigner: false            },
         { name: "covenant";       isMut: true;  isSigner: false            },
-        // Optional — present only for GuardianRemoval covenants.
         { name: "targetGuardian"; isMut: true;  isSigner: false; isOptional: true },
       ];
       args: [];
@@ -128,13 +137,8 @@ export type LegacyVault = {
       args: [];
     },
     {
-      // trigger_inheritance requires only caller and vault. The Rust
-      // TriggerInheritance struct does NOT include an activity account.
-      // The previous version listed activity as a third account, which
-      // prevented the relayer from submitting trigger_inheritance — Anchor's
-      // TypeScript client enforces that every IDL-declared account is supplied,
-      // so the missing activity parameter caused every call to fail before
-      // any transaction was ever sent to the network.
+      // trigger_inheritance requires only caller and vault.
+      // The Rust TriggerInheritance struct does NOT include an activity account.
       name:     "triggerInheritance";
       accounts: [
         { name: "caller"; isMut: true; isSigner: true  },
@@ -173,6 +177,36 @@ export type LegacyVault = {
       ];
       args: [];
     },
+    {
+      // NEW — Cloak integration: records an off-chain shielded deposit.
+      // No SOL moves through this instruction — it stores the UTXO commitment
+      // so guardians can find it during inheritance execution.
+      name:     "recordCloakDeposit";
+      accounts: [
+        { name: "owner"; isMut: true; isSigner: true  },
+        { name: "vault"; isMut: true; isSigner: false },
+      ];
+      args: [
+        { name: "utxoCommitment";   type: { array: ["u8", 32] } },
+        { name: "utxoLeafIndex";    type: "u64" },
+        { name: "shieldedLamports"; type: "u64" },
+      ];
+    },
+    {
+      // NEW — Cloak integration (permissionless): closes Anchor accounts after
+      // guardians have completed the off-chain Cloak shield-to-shield transfer.
+      // The caller receives vault + activity rent as a submission incentive.
+      name:     "recordCloakClaim";
+      accounts: [
+        { name: "caller";        isMut: true; isSigner: true  },
+        { name: "vault";         isMut: true; isSigner: false },
+        { name: "activity";      isMut: true; isSigner: false },
+        { name: "systemProgram"; isMut: false; isSigner: false },
+      ];
+      args: [
+        { name: "cloakTransferSignature"; type: { array: ["u8", 64] } },
+      ];
+    },
   ];
 
   accounts: [
@@ -181,22 +215,27 @@ export type LegacyVault = {
       type: {
         kind: "struct";
         fields: [
-          { name: "owner";                    type: "publicKey" },
-          { name: "beneficiary";              type: "publicKey" },
-          { name: "guardianCount";            type: "u8"        },
-          { name: "mOfNThreshold";            type: "u8"        },
-          { name: "inactivityThresholdSlots"; type: "u64"       },
-          { name: "lastCheckInSlot";          type: "u64"       },
-          { name: "createdSlot";              type: "u64"       },
-          { name: "depositedLamports";        type: "u64"       },
-          { name: "covenantCounter";          type: "u64"       },
-          { name: "vaultIndex";               type: "u64"       },
-          { name: "isTriggered";              type: "bool"      },
-          { name: "isClaimed";                type: "bool"      },
-          { name: "isEmergencySwept";         type: "bool"      },
-          { name: "warning75Sent";            type: "bool"      },
-          { name: "warning90Sent";            type: "bool"      },
-          { name: "bump";                     type: "u8"        },
+          { name: "owner";                    type: "publicKey"            },
+          // v2: was `beneficiary: publicKey` — now raw 32-byte UTXO pubkey.
+          // Anchor deserializes this as a fixed array, not an Ed25519 address.
+          { name: "beneficiaryUtxoPubkey";    type: { array: ["u8", 32] } },
+          { name: "guardianCount";            type: "u8"                   },
+          { name: "mOfNThreshold";            type: "u8"                   },
+          { name: "inactivityThresholdSlots"; type: "u64"                  },
+          { name: "lastCheckInSlot";          type: "u64"                  },
+          { name: "createdSlot";              type: "u64"                  },
+          { name: "depositedLamports";        type: "u64"                  },
+          { name: "covenantCounter";          type: "u64"                  },
+          { name: "vaultIndex";               type: "u64"                  },
+          // v2 new fields — these push isTriggered to byte offset [162].
+          { name: "utxoCommitment";           type: { array: ["u8", 32] } },
+          { name: "utxoLeafIndex";            type: "u64"                  },
+          { name: "isTriggered";              type: "bool"                 },
+          { name: "isClaimed";                type: "bool"                 },
+          { name: "isEmergencySwept";         type: "bool"                 },
+          { name: "warning75Sent";            type: "bool"                 },
+          { name: "warning90Sent";            type: "bool"                 },
+          { name: "bump";                     type: "u8"                   },
         ];
       };
     },
@@ -220,12 +259,12 @@ export type LegacyVault = {
       type: {
         kind: "struct";
         fields: [
-          { name: "vault";                type: "publicKey" },
-          { name: "guardian";             type: "publicKey" },
-          { name: "isActive";             type: "bool"      },
-          { name: "addedSlot";            type: "u64"       },
-          { name: "removalRequestedSlot"; type: "u64"       },
-          { name: "bump";                 type: "u8"        },
+          { name: "vault";                 type: "publicKey" },
+          { name: "guardian";              type: "publicKey" },
+          { name: "isActive";              type: "bool"      },
+          { name: "addedSlot";             type: "u64"       },
+          { name: "removalRequestedSlot";  type: "u64"       },
+          { name: "bump";                  type: "u8"        },
         ];
       };
     },
@@ -234,17 +273,17 @@ export type LegacyVault = {
       type: {
         kind: "struct";
         fields: [
-          { name: "vault";                  type: "publicKey"                },
-          { name: "covenantType";           type: { defined: "CovenantType" } },
-          { name: "target";                 type: "publicKey"                },
-          { name: "signers";                type: { vec: "publicKey" }       },
-          { name: "requiredSignatures";     type: "u8"                       },
-          { name: "createdSlot";            type: "u64"                      },
-          { name: "timelockSlots";          type: "u64"                      },
-          { name: "signaturesCompleteSlot"; type: "u64"                      },
-          { name: "covenantIndex";          type: "u64"                      },
-          { name: "isExecuted";             type: "bool"                     },
-          { name: "bump";                   type: "u8"                       },
+          { name: "vault";                   type: "publicKey"                },
+          { name: "covenantType";            type: { defined: "CovenantType" } },
+          { name: "target";                  type: "publicKey"                },
+          { name: "signers";                 type: { vec: "publicKey" }       },
+          { name: "requiredSignatures";      type: "u8"                       },
+          { name: "createdSlot";             type: "u64"                      },
+          { name: "timelockSlots";           type: "u64"                      },
+          { name: "signaturesCompleteSlot";  type: "u64"                      },
+          { name: "covenantIndex";           type: "u64"                      },
+          { name: "isExecuted";              type: "bool"                     },
+          { name: "bump";                    type: "u8"                       },
         ];
       };
     },

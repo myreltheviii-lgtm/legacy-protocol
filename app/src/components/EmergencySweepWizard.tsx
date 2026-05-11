@@ -248,7 +248,7 @@ export function EmergencySweepWizard({
               </button>
               <button
                 className="btn-danger"
-                onClick={handleSweep}
+                onClick={() => { void handleSweep(); }}
                 disabled={sweeping || !publicKey}
                 aria-label="Execute emergency sweep — irreversible action"
               >

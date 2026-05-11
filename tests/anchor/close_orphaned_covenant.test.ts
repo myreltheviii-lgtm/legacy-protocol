@@ -5,7 +5,7 @@ import { Keypair, PublicKey, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web
 import { LegacyVault }       from "../../target/types/legacy_vault";
 import IDL                   from "../../target/idl/legacy_vault.json";
 
-const PROGRAM_ID    = new PublicKey("LGCYvau1tXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+const PROGRAM_ID    = new PublicKey("4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd");
 const VAULT_SEED    = Buffer.from("vault");
 const ACTIVITY_SEED = Buffer.from("activity");
 const GUARDIAN_SEED = Buffer.from("guardian");
@@ -26,11 +26,13 @@ function deriveCovenantPda(vaultPda: PublicKey, covenantIndex: BN): [PublicKey, 
   return PublicKey.findProgramAddressSync([COVENANT_SEED, vaultPda.toBuffer(), b], PROGRAM_ID);
 }
 
+// A non-zero 32-byte Cloak UTXO pubkey for the beneficiary identity (v2 arg, not account).
+const BENEFICIARY_UTXO_PUBKEY = Array.from({ length: 32 }, (_, i) => i + 1);
+
 describe("close_orphaned_covenant", () => {
   let context:    ProgramTestContext;
   let program:    Program<LegacyVault>;
   let owner:      Keypair;
-  let beneficiary: Keypair;
   let guardian:   Keypair;
   let vaultPda:   PublicKey;
   let activityPda: PublicKey;
@@ -41,24 +43,24 @@ describe("close_orphaned_covenant", () => {
     context  = await startAnchor(".", [{ name: "legacy_vault", programId: PROGRAM_ID }], []);
     const provider = new BankrunProvider(context);
     program  = new Program<LegacyVault>(IDL as any, PROGRAM_ID, provider);
-    owner       = Keypair.generate();
-    beneficiary = Keypair.generate();
-    guardian    = Keypair.generate();
+    owner    = Keypair.generate();
+    guardian = Keypair.generate();
 
     for (const kp of [owner, guardian]) {
       context.setAccount(kp.publicKey, { lamports: 10 * LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
     }
-    context.setAccount(beneficiary.publicKey, { lamports: LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
 
     [vaultPda]    = deriveVaultPda(owner.publicKey, new BN(0));
     [activityPda] = deriveActivityPda(vaultPda);
     [gPda]        = deriveGuardianPda(vaultPda, guardian.publicKey);
     [covenantPda] = deriveCovenantPda(vaultPda, new BN(0));
 
-    await program.methods.initializeVault(new BN(0), new BN(5_000_000)).accounts({ owner: owner.publicKey, beneficiary: beneficiary.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId }).signers([owner]).rpc();
+    // v2 API: initializeVault(vaultIndex, inactivityThresholdSlots, beneficiaryUtxoPubkey).
+    // No beneficiary account — removed in v2.
+    await program.methods.initializeVault(new BN(0), new BN(5_000_000), BENEFICIARY_UTXO_PUBKEY).accounts({ owner: owner.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId }).signers([owner]).rpc();
     await program.methods.addGuardian(1).accounts({ owner: owner.publicKey, vault: vaultPda, guardian: guardian.publicKey, guardianAccount: gPda, systemProgram: SystemProgram.programId }).signers([owner]).rpc();
 
-    // Create a BeneficiaryChange covenant (not an EmergencySweep so it can be orphaned)
+    // Create a BeneficiaryChange covenant (not EmergencySweep so it can be orphaned)
     const newBen = Keypair.generate();
     await program.methods.createCovenant({ beneficiaryChange: {} }, newBen.publicKey).accounts({ guardian: guardian.publicKey, vault: vaultPda, guardianAccount: gPda, covenant: covenantPda, systemProgram: SystemProgram.programId }).signers([guardian]).rpc();
 
@@ -69,6 +71,7 @@ describe("close_orphaned_covenant", () => {
 
     const caller = Keypair.generate();
     context.setAccount(caller.publicKey, { lamports: LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
+    // trigger_inheritance: only caller + vault accounts
     await program.methods.triggerInheritance().accounts({ caller: caller.publicKey, vault: vaultPda }).signers([caller]).rpc();
   });
 
@@ -87,10 +90,9 @@ describe("close_orphaned_covenant", () => {
     expect(callerAfter).toBeGreaterThan(callerBefore);
   });
 
-  it("requires is_triggered=true — rejects on live vault", async () => {
-    // Create fresh vault with covenant
+  it("requires is_triggered=true — rejects on live vault with VaultNotTriggered", async () => {
+    // Create fresh vault with covenant that has NOT been triggered
     const owner2    = Keypair.generate();
-    const ben2      = Keypair.generate();
     const guardian2 = Keypair.generate();
     context.setAccount(owner2.publicKey,    { lamports: 10 * LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
     context.setAccount(guardian2.publicKey, { lamports: 5 * LAMPORTS_PER_SOL,  data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
@@ -100,7 +102,7 @@ describe("close_orphaned_covenant", () => {
     const [gPda2]        = deriveGuardianPda(vaultPda2, guardian2.publicKey);
     const [covenantPda2] = deriveCovenantPda(vaultPda2, new BN(0));
 
-    await program.methods.initializeVault(new BN(0), new BN(5_000_000)).accounts({ owner: owner2.publicKey, beneficiary: ben2.publicKey, vault: vaultPda2, activity: activityPda2, systemProgram: SystemProgram.programId }).signers([owner2]).rpc();
+    await program.methods.initializeVault(new BN(0), new BN(5_000_000), BENEFICIARY_UTXO_PUBKEY).accounts({ owner: owner2.publicKey, vault: vaultPda2, activity: activityPda2, systemProgram: SystemProgram.programId }).signers([owner2]).rpc();
     await program.methods.addGuardian(1).accounts({ owner: owner2.publicKey, vault: vaultPda2, guardian: guardian2.publicKey, guardianAccount: gPda2, systemProgram: SystemProgram.programId }).signers([owner2]).rpc();
     await program.methods.createCovenant({ emergencySweep: {} }, PublicKey.default).accounts({ guardian: guardian2.publicKey, vault: vaultPda2, guardianAccount: gPda2, covenant: covenantPda2, systemProgram: SystemProgram.programId }).signers([guardian2]).rpc();
 
@@ -121,5 +123,3 @@ describe("close_orphaned_covenant", () => {
     ).resolves.toBeTruthy();
   });
 });
-```
-

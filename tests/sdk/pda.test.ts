@@ -6,7 +6,7 @@ import {
   deriveCovenantPda,
 } from "../../sdk/src/pda";
 
-const PROGRAM_ID = new PublicKey("LGCYvau1tXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+const PROGRAM_ID = new PublicKey("4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd");
 
 const VAULT_SEED    = Buffer.from("vault");
 const ACTIVITY_SEED = Buffer.from("activity");

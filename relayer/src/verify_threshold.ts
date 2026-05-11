@@ -127,8 +127,24 @@ export async function verifyTriggerPreflight(
   // the values cached in the watcher signal. This catches the case where the
   // owner checked in (resetting lastCheckInSlot) after the signal was emitted.
 
-  const lastCheckInSlot         = BigInt(vaultAccount.lastCheckInSlot.toString());
+  const lastCheckInSlot          = BigInt(vaultAccount.lastCheckInSlot.toString());
   const inactivityThresholdSlots = BigInt(vaultAccount.inactivityThresholdSlots.toString());
+
+  // Guard against a zero threshold — the on-chain program prevents this via
+  // ThresholdTooLow, but a corrupted or unexpected account fetched from RPC
+  // must not cause a BigInt division-by-zero crash. Treat as an RPC error so
+  // the caller retries rather than permanently skipping the vault.
+  if (inactivityThresholdSlots === 0n) {
+    logger.error(
+      { vault: vaultAddress },
+      "Pre-flight: vault has zero inactivityThresholdSlots — data anomaly, treating as RPC error",
+    );
+    return {
+      status:      PreflightStatus.RpcError,
+      currentSlot,
+      error:       new Error("inactivityThresholdSlots is zero — vault data anomaly"),
+    };
+  }
 
   const triggerSlot = lastCheckInSlot + inactivityThresholdSlots;
 

@@ -5,7 +5,7 @@ import { Keypair, PublicKey, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web
 import { LegacyVault }       from "../../target/types/legacy_vault";
 import IDL                   from "../../target/idl/legacy_vault.json";
 
-const PROGRAM_ID      = new PublicKey("LGCYvau1tXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+const PROGRAM_ID      = new PublicKey("4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd");
 const VAULT_SEED      = Buffer.from("vault");
 const ACTIVITY_SEED   = Buffer.from("activity");
 const GUARDIAN_SEED   = Buffer.from("guardian");
@@ -27,27 +27,29 @@ function deriveCovenantPda(vaultPda: PublicKey, covenantIndex: BN): [PublicKey, 
   return PublicKey.findProgramAddressSync([COVENANT_SEED, vaultPda.toBuffer(), b], PROGRAM_ID);
 }
 
+// A non-zero 32-byte Cloak UTXO pubkey for the beneficiary identity (v2 arg, not account).
+const BENEFICIARY_UTXO_PUBKEY = Array.from({ length: 32 }, (_, i) => i + 1);
+
 describe("integration: guardian council M-of-N", () => {
   let context:    ProgramTestContext;
   let program:    Program<LegacyVault>;
   let owner:      Keypair;
-  let beneficiary: Keypair;
   let caller:     Keypair;
 
   beforeEach(async () => {
     context  = await startAnchor(".", [{ name: "legacy_vault", programId: PROGRAM_ID }], []);
     const provider = new BankrunProvider(context);
     program  = new Program<LegacyVault>(IDL as any, PROGRAM_ID, provider);
-    owner       = Keypair.generate();
-    beneficiary = Keypair.generate();
-    caller      = Keypair.generate();
+    owner    = Keypair.generate();
+    caller   = Keypair.generate();
 
     for (const kp of [owner, caller]) {
       context.setAccount(kp.publicKey, { lamports: 20 * LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
     }
-    context.setAccount(beneficiary.publicKey, { lamports: LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
   });
 
+  // v2 API: initializeVault(vaultIndex, inactivityThresholdSlots, beneficiaryUtxoPubkey).
+  // No beneficiary account — removed in v2.
   async function setupVaultWithGuardians(vaultIndex: number, numGuardians: number, mOfN: number): Promise<{
     vaultPda: PublicKey;
     activityPda: PublicKey;
@@ -58,8 +60,8 @@ describe("integration: guardian council M-of-N", () => {
     const [activityPda] = deriveActivityPda(vaultPda);
 
     await program.methods
-      .initializeVault(new BN(vaultIndex), new BN(5_000_000))
-      .accounts({ owner: owner.publicKey, beneficiary: beneficiary.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId })
+      .initializeVault(new BN(vaultIndex), new BN(5_000_000), BENEFICIARY_UTXO_PUBKEY)
+      .accounts({ owner: owner.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId })
       .signers([owner])
       .rpc();
 
@@ -114,8 +116,12 @@ describe("integration: guardian council M-of-N", () => {
       .signers([caller])
       .rpc();
 
+    // v2: BeneficiaryChange updates vault.beneficiaryUtxoPubkey (a [u8;32] array)
+    // with the raw bytes of the target pubkey. vault.beneficiary as Pubkey does not exist in v2.
     const vault = await program.account.vaultAccount.fetch(vaultPda);
-    expect(vault.beneficiary.toBase58()).toBe(newBen.publicKey.toBase58());
+    expect(Array.from(vault.beneficiaryUtxoPubkey as number[])).toEqual(
+      Array.from(newBen.publicKey.toBytes()),
+    );
     expect(await context.banksClient.getAccount(covenantPda)).toBeNull();
   });
 
@@ -161,8 +167,11 @@ describe("integration: guardian council M-of-N", () => {
       .signers([caller])
       .rpc();
 
+    // v2: beneficiaryUtxoPubkey updated with raw bytes of the new beneficiary's pubkey
     const vault = await program.account.vaultAccount.fetch(vaultPda);
-    expect(vault.beneficiary.toBase58()).toBe(newBen.publicKey.toBase58());
+    expect(Array.from(vault.beneficiaryUtxoPubkey as number[])).toEqual(
+      Array.from(newBen.publicKey.toBytes()),
+    );
   });
 
   it("insufficient signatures (M-1 signs) → execute fails with InsufficientSignatures", async () => {
@@ -177,11 +186,9 @@ describe("integration: guardian council M-of-N", () => {
       .signers([guardians[0]])
       .rpc();
 
-    // signaturesCompleteSlot should be 0 (not reached M=2)
     const cov = await program.account.covenantAccount.fetch(covenantPda);
-    expect(cov.signaturesCompleteSlot.toNumber()).toBe(0);
+    expect(cov.signaturesCompleteSlot.toNumber()).toBe(0); // not reached M=2
 
-    // Execute should fail — signatures_complete_slot = 0 → InsufficientSignatures
     await expect(
       program.methods.executeCovenant()
         .accounts({ caller: caller.publicKey, vault: vaultPda, covenant: covenantPda, targetGuardian: null })
@@ -192,10 +199,11 @@ describe("integration: guardian council M-of-N", () => {
 
   it("guardian removal via covenant: immediate (0 timelock)", async () => {
     const { vaultPda, guardians, gPdas } = await setupVaultWithGuardians(3, 3, 1);
-    const targetGuardian  = guardians[2];
-    const [targetGPda]    = gPdas[2];
-    const vaultBefore     = await program.account.vaultAccount.fetch(vaultPda);
-    const [covenantPda]   = deriveCovenantPda(vaultPda, vaultBefore.covenantCounter);
+    const targetGuardian = guardians[2];
+    // gPdas is PublicKey[] — use index access, NOT destructuring, to get the PublicKey
+    const targetGPda     = gPdas[2];
+    const vaultBefore    = await program.account.vaultAccount.fetch(vaultPda);
+    const [covenantPda]  = deriveCovenantPda(vaultPda, vaultBefore.covenantCounter);
 
     await program.methods
       .createCovenant({ guardianRemoval: {} }, targetGuardian.publicKey)
@@ -225,7 +233,7 @@ describe("integration: guardian council M-of-N", () => {
       .signers([guardians[0]])
       .rpc();
 
-    // Try to execute immediately — must fail with CovenantTimelockActive
+    // Execute immediately must fail — timelock active
     await expect(
       program.methods.executeCovenant()
         .accounts({ caller: caller.publicKey, vault: vaultPda, covenant: covenantPda, targetGuardian: null })
@@ -243,7 +251,10 @@ describe("integration: guardian council M-of-N", () => {
       .signers([caller])
       .rpc();
 
+    // v2: beneficiaryUtxoPubkey updated with raw bytes of the new beneficiary's pubkey
     const vault = await program.account.vaultAccount.fetch(vaultPda);
-    expect(vault.beneficiary.toBase58()).toBe(newBen.publicKey.toBase58());
+    expect(Array.from(vault.beneficiaryUtxoPubkey as number[])).toEqual(
+      Array.from(newBen.publicKey.toBytes()),
+    );
   });
 });

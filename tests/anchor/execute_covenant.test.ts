@@ -5,7 +5,7 @@ import { Keypair, PublicKey, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web
 import { LegacyVault }       from "../../target/types/legacy_vault";
 import IDL                   from "../../target/idl/legacy_vault.json";
 
-const PROGRAM_ID      = new PublicKey("LGCYvau1tXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+const PROGRAM_ID      = new PublicKey("4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd");
 const VAULT_SEED      = Buffer.from("vault");
 const ACTIVITY_SEED   = Buffer.from("activity");
 const GUARDIAN_SEED   = Buffer.from("guardian");
@@ -27,11 +27,13 @@ function deriveCovenantPda(vaultPda: PublicKey, covenantIndex: BN): [PublicKey, 
   return PublicKey.findProgramAddressSync([COVENANT_SEED, vaultPda.toBuffer(), b], PROGRAM_ID);
 }
 
+// A non-zero 32-byte Cloak UTXO pubkey for the beneficiary identity (v2 arg, not account).
+const BENEFICIARY_UTXO_PUBKEY = Array.from({ length: 32 }, (_, i) => i + 1);
+
 describe("execute_covenant", () => {
   let context:    ProgramTestContext;
   let program:    Program<LegacyVault>;
   let owner:      Keypair;
-  let beneficiary: Keypair;
   let g1:         Keypair;
   let g2:         Keypair;
   let vaultPda:   PublicKey;
@@ -43,8 +45,7 @@ describe("execute_covenant", () => {
     context  = await startAnchor(".", [{ name: "legacy_vault", programId: PROGRAM_ID }], []);
     const provider = new BankrunProvider(context);
     program  = new Program<LegacyVault>(IDL as any, PROGRAM_ID, provider);
-    owner       = Keypair.generate();
-    beneficiary = Keypair.generate();
+    owner    = Keypair.generate();
     g1 = Keypair.generate(); g2 = Keypair.generate();
 
     for (const kp of [owner, g1, g2]) {
@@ -56,7 +57,13 @@ describe("execute_covenant", () => {
     [gPda1]       = deriveGuardianPda(vaultPda, g1.publicKey);
     [gPda2]       = deriveGuardianPda(vaultPda, g2.publicKey);
 
-    await program.methods.initializeVault(new BN(0), new BN(5_000_000)).accounts({ owner: owner.publicKey, beneficiary: beneficiary.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId }).signers([owner]).rpc();
+    // v2 API: initializeVault(vaultIndex, inactivityThresholdSlots, beneficiaryUtxoPubkey).
+    // No beneficiary account — removed in v2.
+    await program.methods
+      .initializeVault(new BN(0), new BN(5_000_000), BENEFICIARY_UTXO_PUBKEY)
+      .accounts({ owner: owner.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId })
+      .signers([owner])
+      .rpc();
     await program.methods.addGuardian(1).accounts({ owner: owner.publicKey, vault: vaultPda, guardian: g1.publicKey, guardianAccount: gPda1, systemProgram: SystemProgram.programId }).signers([owner]).rpc();
     await program.methods.addGuardian(1).accounts({ owner: owner.publicKey, vault: vaultPda, guardian: g2.publicKey, guardianAccount: gPda2, systemProgram: SystemProgram.programId }).signers([owner]).rpc();
   });
@@ -77,8 +84,12 @@ describe("execute_covenant", () => {
 
     await program.methods.executeCovenant().accounts({ caller: caller.publicKey, vault: vaultPda, covenant: covenantPda, targetGuardian: null }).signers([caller]).rpc();
 
+    // v2: BeneficiaryChange updates vault.beneficiaryUtxoPubkey (a [u8;32] array) with the
+    // target pubkey's raw bytes. There is no vault.beneficiary Pubkey field in v2.
     const vault = await program.account.vaultAccount.fetch(vaultPda);
-    expect(vault.beneficiary.toBase58()).toBe(newBeneficiary.publicKey.toBase58());
+    expect(Array.from(vault.beneficiaryUtxoPubkey as number[])).toEqual(
+      Array.from(newBeneficiary.publicKey.toBytes()),
+    );
 
     const covenantPdaInfo = await context.banksClient.getAccount(covenantPda);
     expect(covenantPdaInfo).toBeNull();
@@ -151,5 +162,3 @@ describe("execute_covenant", () => {
     ).rejects.toThrow();
   });
 });
-```
-

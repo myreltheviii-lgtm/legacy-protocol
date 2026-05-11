@@ -3,6 +3,18 @@
 // Creates a new VaultAccount and its companion ActivityAccount for a given
 // owner. The owner can maintain multiple vaults simultaneously — each is
 // distinguished by a monotonically increasing `vault_index` they supply.
+//
+// Cloak integration change:
+//   The `beneficiary` account parameter is replaced by `beneficiary_utxo_pubkey: [u8;32]`
+//   instruction argument. The beneficiary no longer registers their Solana
+//   wallet on-chain — instead, they generate a UTXO keypair client-side and
+//   only share the 32-byte public key. This public key is stored verbatim in
+//   vault.beneficiary_utxo_pubkey with no on-chain address check possible
+//   (it is not an Ed25519 public key in the Solana sense).
+//
+//   For non-shielded (legacy) use, callers may pass the raw bytes of a
+//   standard Solana Pubkey. The claim_inheritance instruction will reconstruct
+//   the Pubkey via Pubkey::from(bytes) for identity verification.
 
 use anchor_lang::prelude::*;
 use crate::constants::{
@@ -15,13 +27,10 @@ use crate::errors::LegacyError;
 use crate::state::{ActivityAccount, VaultAccount};
 
 #[derive(Accounts)]
-#[instruction(vault_index: u64, inactivity_threshold_slots: u64)]
+#[instruction(vault_index: u64, inactivity_threshold_slots: u64, beneficiary_utxo_pubkey: [u8; 32])]
 pub struct InitializeVault<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
-
-    /// CHECK: We do not read or write this account. We only store its pubkey.
-    pub beneficiary: UncheckedAccount<'info>,
 
     #[account(
         init,
@@ -48,6 +57,7 @@ pub fn handler(
     ctx: Context<InitializeVault>,
     vault_index: u64,
     inactivity_threshold_slots: u64,
+    beneficiary_utxo_pubkey: [u8; 32],
 ) -> Result<()> {
     let threshold = if inactivity_threshold_slots == 0 {
         DEFAULT_INACTIVITY_THRESHOLD_SLOTS
@@ -64,8 +74,10 @@ pub fn handler(
         LegacyError::ThresholdTooHigh
     );
 
+    // Reject an all-zeros beneficiary — this has no corresponding key and
+    // would make the vault permanently unclaimable.
     require!(
-        ctx.accounts.beneficiary.key() != Pubkey::default(),
+        beneficiary_utxo_pubkey != [0u8; 32],
         LegacyError::InvalidBeneficiary
     );
 
@@ -73,7 +85,7 @@ pub fn handler(
     let vault = &mut ctx.accounts.vault;
 
     vault.owner                      = ctx.accounts.owner.key();
-    vault.beneficiary                = ctx.accounts.beneficiary.key();
+    vault.beneficiary_utxo_pubkey    = beneficiary_utxo_pubkey;
     vault.guardian_count             = 0;
     vault.m_of_n_threshold           = 0;
     vault.inactivity_threshold_slots = threshold;
@@ -82,6 +94,8 @@ pub fn handler(
     vault.deposited_lamports         = 0;
     vault.covenant_counter           = 0;
     vault.vault_index                = vault_index;
+    vault.utxo_commitment            = [0u8; 32];
+    vault.utxo_leaf_index            = 0;
     vault.is_triggered               = false;
     vault.is_claimed                 = false;
     vault.is_emergency_swept         = false;
@@ -99,11 +113,11 @@ pub fn handler(
     activity.bump                 = ctx.bumps.activity;
 
     emit!(VaultInitialised {
-        vault:           vault.key(),
-        owner:           vault.owner,
-        beneficiary:     vault.beneficiary,
-        threshold_slots: vault.inactivity_threshold_slots,
-        created_slot:    clock.slot,
+        vault:                   vault.key(),
+        owner:                   vault.owner,
+        beneficiary_utxo_pubkey: vault.beneficiary_utxo_pubkey,
+        threshold_slots:         vault.inactivity_threshold_slots,
+        created_slot:            clock.slot,
     });
 
     Ok(())
@@ -111,9 +125,11 @@ pub fn handler(
 
 #[event]
 pub struct VaultInitialised {
-    pub vault:           Pubkey,
-    pub owner:           Pubkey,
-    pub beneficiary:     Pubkey,
-    pub threshold_slots: u64,
-    pub created_slot:    u64,
+    pub vault:                   Pubkey,
+    pub owner:                   Pubkey,
+    /// Raw bytes of the beneficiary's Cloak UTXO public key.
+    /// Not a Solana address — do not attempt to load this as an account.
+    pub beneficiary_utxo_pubkey: [u8; 32],
+    pub threshold_slots:         u64,
+    pub created_slot:            u64,
 }

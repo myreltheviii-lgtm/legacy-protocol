@@ -3,28 +3,24 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useConnection } from "@solana/wallet-adapter-react";
 import { PublicKey, AccountChangeCallback } from "@solana/web3.js";
+import { useWatcherEvents } from "@/hooks/useWatcherEvents";
 
-/**
- * Subscribes to real-time WebSocket account change notifications for the
- * given vault PDA. Calls onUpdate whenever the on-chain account changes.
- *
- * The subscription is established once and cleaned up when the component
- * unmounts or the vaultAddress changes. A debounce of 400 ms prevents
- * duplicate calls when multiple updates arrive in the same slot.
- */
 export function useVaultRealtime(
   vaultAddress: string | null,
   onUpdate:     () => void,
 ): void {
   const { connection } = useConnection();
-  const subIdRef       = useRef<number | null>(null);
-  const debounceRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { subscribe }  = useWatcherEvents();
+
+  const subIdRef    = useRef<number | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const debouncedUpdate = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(onUpdate, 400);
   }, [onUpdate]);
 
+  // Solana native onAccountChange subscription
   useEffect(() => {
     if (!vaultAddress) return;
 
@@ -35,7 +31,7 @@ export function useVaultRealtime(
       return;
     }
 
-    const handler: AccountChangeCallback = (_info) => {
+    const handler: AccountChangeCallback = () => {
       debouncedUpdate();
     };
 
@@ -51,4 +47,11 @@ export function useVaultRealtime(
       }
     };
   }, [vaultAddress, connection, debouncedUpdate]);
+
+  // Watcher WebSocket subscription (no-op if env var absent)
+  useEffect(() => {
+    if (!vaultAddress) return;
+    const unsubscribe = subscribe(vaultAddress, debouncedUpdate);
+    return unsubscribe;
+  }, [vaultAddress, subscribe, debouncedUpdate]);
 }

@@ -5,7 +5,7 @@ import { Keypair, PublicKey, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web
 import { LegacyVault }       from "../../target/types/legacy_vault";
 import IDL                   from "../../target/idl/legacy_vault.json";
 
-const PROGRAM_ID    = new PublicKey("LGCYvau1tXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+const PROGRAM_ID    = new PublicKey("4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd");
 const VAULT_SEED    = Buffer.from("vault");
 const ACTIVITY_SEED = Buffer.from("activity");
 const GUARDIAN_SEED = Buffer.from("guardian");
@@ -21,11 +21,15 @@ function deriveGuardianPda(vaultPda: PublicKey, guardian: PublicKey): [PublicKey
   return PublicKey.findProgramAddressSync([GUARDIAN_SEED, vaultPda.toBuffer(), guardian.toBuffer()], PROGRAM_ID);
 }
 
+// A non-zero 32-byte Cloak UTXO pubkey used as the beneficiary identity in v2.
+// V2 stores the beneficiary as raw bytes, not as a Solana account. This value
+// satisfies the InvalidBeneficiary check (all-zero is sentinel for "no beneficiary").
+const BENEFICIARY_UTXO_PUBKEY = Array.from({ length: 32 }, (_, i) => i + 1);
+
 describe("check_in", () => {
   let context:    ProgramTestContext;
   let program:    Program<LegacyVault>;
   let owner:      Keypair;
-  let beneficiary: Keypair;
   let vaultPda:   PublicKey;
   let activityPda: PublicKey;
 
@@ -33,21 +37,25 @@ describe("check_in", () => {
     context  = await startAnchor(".", [{ name: "legacy_vault", programId: PROGRAM_ID }], []);
     const provider = new BankrunProvider(context);
     program  = new Program<LegacyVault>(IDL as any, PROGRAM_ID, provider);
-    owner       = Keypair.generate();
-    beneficiary = Keypair.generate();
+    owner    = Keypair.generate();
     context.setAccount(owner.publicKey, { lamports: 10 * LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
 
     [vaultPda]    = deriveVaultPda(owner.publicKey, new BN(0));
     [activityPda] = deriveActivityPda(vaultPda);
 
-    await program.methods.initializeVault(new BN(0), new BN(5_000_000)).accounts({ owner: owner.publicKey, beneficiary: beneficiary.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId }).signers([owner]).rpc();
+    // v2 API: initializeVault(vaultIndex, inactivityThresholdSlots, beneficiaryUtxoPubkey).
+    // There is NO beneficiary account — the UTXO pubkey is an instruction argument.
+    await program.methods
+      .initializeVault(new BN(0), new BN(5_000_000), BENEFICIARY_UTXO_PUBKEY)
+      .accounts({ owner: owner.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId })
+      .signers([owner])
+      .rpc();
   });
 
   it("happy path: last_check_in_slot updated, checkin_count incremented", async () => {
     const initVault = await program.account.vaultAccount.fetch(vaultPda);
     const initSlot  = BigInt(initVault.lastCheckInSlot.toString());
 
-    // Warp forward
     context.warpToSlot(initSlot + 1000n);
 
     await program.methods.checkIn().accounts({ owner: owner.publicKey, vault: vaultPda, activity: activityPda }).signers([owner]).rpc();
@@ -67,8 +75,7 @@ describe("check_in", () => {
     await program.methods.checkIn().accounts({ owner: owner.publicKey, vault: vaultPda, activity: activityPda }).signers([owner]).rpc();
 
     const activity1 = await program.account.activityAccount.fetch(activityPda);
-    const interval1 = BigInt(activity1.sumOfIntervals.toString());
-    expect(interval1).toBe(500n);
+    expect(BigInt(activity1.sumOfIntervals.toString())).toBe(500n);
 
     const vault1 = await program.account.vaultAccount.fetch(vaultPda);
     context.warpToSlot(BigInt(vault1.lastCheckInSlot.toString()) + 300n);
@@ -94,26 +101,24 @@ describe("check_in", () => {
     const initVault = await program.account.vaultAccount.fetch(vaultPda);
     const initSlot  = BigInt(initVault.lastCheckInSlot.toString());
 
-    // Add guardian and flag anomaly
     const guardian = Keypair.generate();
     context.setAccount(guardian.publicKey, { lamports: LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
     const [gPda] = deriveGuardianPda(vaultPda, guardian.publicKey);
     await program.methods.addGuardian(1).accounts({ owner: owner.publicKey, vault: vaultPda, guardian: guardian.publicKey, guardianAccount: gPda, systemProgram: SystemProgram.programId }).signers([owner]).rpc();
 
-    // Warp past anomaly threshold: elapsed > (0 * 150) / 0 / 100 → not anomalous yet (no history)
-    // Need at least one check-in first to build history
+    // Build anomaly history: check in once to establish average interval
     context.warpToSlot(initSlot + 1000n);
     await program.methods.checkIn().accounts({ owner: owner.publicKey, vault: vaultPda, activity: activityPda }).signers([owner]).rpc();
 
     const vault1 = await program.account.vaultAccount.fetch(vaultPda);
-    // Warp way past 1.5× the average
+    // Warp way past 1.5× average (average=1000, threshold=1500)
     context.warpToSlot(BigInt(vault1.lastCheckInSlot.toString()) + 2000n);
     await program.methods.anomalyFlag().accounts({ guardian: guardian.publicKey, vault: vaultPda, guardianAccount: gPda, activity: activityPda }).signers([guardian]).rpc();
 
     const activityFlagged = await program.account.activityAccount.fetch(activityPda);
     expect(activityFlagged.anomalyFlagged).toBe(true);
 
-    // Check in clears the flag
+    // Check in clears the anomaly flag
     const vault2 = await program.account.vaultAccount.fetch(vaultPda);
     context.warpToSlot(BigInt(vault2.lastCheckInSlot.toString()) + 1n);
     await program.methods.checkIn().accounts({ owner: owner.publicKey, vault: vaultPda, activity: activityPda }).signers([owner]).rpc();
@@ -123,7 +128,7 @@ describe("check_in", () => {
     expect(activityCleared.anomalyFlaggedSlot.toNumber()).toBe(0);
   });
 
-  it("warning_75_sent and warning_90_sent reset on check-in — they start false", async () => {
+  it("warning_75_sent and warning_90_sent start as false and remain false after check-in", async () => {
     const initVault = await program.account.vaultAccount.fetch(vaultPda);
     context.warpToSlot(BigInt(initVault.lastCheckInSlot.toString()) + 100n);
 
@@ -135,16 +140,13 @@ describe("check_in", () => {
   });
 
   it("same-slot check-in rejected with SameSlotCheckIn", async () => {
-    // Impossible to get same slot in bankrun easily since slot advances;
-    // we test by doing two rapid calls — the second may be same slot
-    // The actual same-slot test: warp to a slot, check in, try same slot again.
     const initVault = await program.account.vaultAccount.fetch(vaultPda);
     const slot = BigInt(initVault.lastCheckInSlot.toString()) + 500n;
     context.warpToSlot(slot);
 
     await program.methods.checkIn().accounts({ owner: owner.publicKey, vault: vaultPda, activity: activityPda }).signers([owner]).rpc();
 
-    // Stay at same slot — warp to same slot again (bankrun allows this)
+    // Stay at the same slot — bankrun allows warping back/staying
     context.warpToSlot(slot);
 
     await expect(
@@ -161,5 +163,3 @@ describe("check_in", () => {
     ).rejects.toThrow(/UnauthorisedOwner|constraint/i);
   });
 });
-```
-

@@ -58,6 +58,10 @@ beforeEach(() => {
 afterEach(() => {
   getStore().close();
   [dbPath, `${dbPath}-wal`, `${dbPath}-shm`].forEach(p => { if (fs.existsSync(p)) fs.unlinkSync(p); });
+  // Clean up any lingering listeners to prevent accumulation across tests
+  guardianAlertBus.removeAllListeners();
+  beneficiaryAlertBus.removeAllListeners();
+  triggerSignalBus.removeAllListeners();
 });
 
 describe("guardian alert bus — Yellow zone (75-89%)", () => {
@@ -97,7 +101,6 @@ describe("guardian alert bus — Yellow zone (75-89%)", () => {
     await sendGuardianPingsForEligibleVaults(null as any, null as any, [vault], [state]);
 
     expect(pinCount).toBe(0); // already sent
-    guardianAlertBus.removeAllListeners("guardian_ping");
   });
 });
 
@@ -133,7 +136,65 @@ describe("beneficiary alert bus — Orange zone (90-99%)", () => {
 
     await sendBeneficiaryWarningsForEligibleVaults(null as any, null as any, [vault], [state], "http://localhost:3000");
     expect(warnCount).toBe(0);
-    beneficiaryAlertBus.removeAllListeners("beneficiary_warn");
+  });
+
+  it("Orange zone (90-99%) does NOT emit a trigger signal", async () => {
+    // Layer H: a vault at 90-99% (Orange zone) is not past the threshold — the
+    // trigger signal must NOT be emitted. Only Red zone (>=100%) should trigger.
+    const threshold = 5_000_000n;
+    const orangeSlot = (threshold * 95n) / 100n; // 95% = Orange
+    const vault = makeVaultRecord(0n, threshold);
+    getStore().registerVault(vault);
+
+    const state = computeVaultInactivityState(vault, orangeSlot);
+    expect(state.zone).toBe(ActivityZone.Orange);
+    expect(state.score).toBeGreaterThanOrEqual(90n);
+    expect(state.score).toBeLessThan(100n);
+
+    let signalCount = 0;
+    triggerSignalBus.on("trigger_ready", () => { signalCount++; });
+
+    const results = await signalEligibleTriggers(null as any, null as any, [vault], [state]);
+    expect(results[0].signalEmitted).toBe(false);
+    expect(signalCount).toBe(0);
+  });
+
+  it("Yellow zone (75-89%) does NOT emit a trigger signal", async () => {
+    const threshold = 5_000_000n;
+    const yellowSlot = (threshold * 80n) / 100n; // 80% = Yellow
+    const vault = makeVaultRecord(0n, threshold);
+    getStore().registerVault(vault);
+
+    const state = computeVaultInactivityState(vault, yellowSlot);
+    expect(state.zone).toBe(ActivityZone.Yellow);
+
+    let signalCount = 0;
+    triggerSignalBus.on("trigger_ready", () => { signalCount++; });
+
+    const results = await signalEligibleTriggers(null as any, null as any, [vault], [state]);
+    expect(results[0].signalEmitted).toBe(false);
+    expect(signalCount).toBe(0);
+  });
+
+  it("Green zone does NOT emit beneficiary warning or trigger signal", async () => {
+    const threshold  = 5_000_000n;
+    const greenSlot  = (threshold * 50n) / 100n; // 50% = Green
+    const vault = makeVaultRecord(0n, threshold);
+    getStore().registerVault(vault);
+
+    const state = computeVaultInactivityState(vault, greenSlot);
+    expect(state.zone).toBe(ActivityZone.Green);
+
+    let warnCount   = 0;
+    let signalCount = 0;
+    beneficiaryAlertBus.on("beneficiary_warn", () => { warnCount++; });
+    triggerSignalBus.on("trigger_ready", () => { signalCount++; });
+
+    await sendBeneficiaryWarningsForEligibleVaults(null as any, null as any, [vault], [state], "http://localhost:3000");
+    await signalEligibleTriggers(null as any, null as any, [vault], [state]);
+
+    expect(warnCount).toBe(0);
+    expect(signalCount).toBe(0);
   });
 });
 
@@ -169,7 +230,6 @@ describe("trigger signal bus — Red zone (>=100%)", () => {
 
     await signalEligibleTriggers(null as any, null as any, [vault], [state]);
     expect(signalCount).toBe(0);
-    triggerSignalBus.removeAllListeners("trigger_ready");
   });
 
   it("alerts reset after check-in — zone returns to Green", () => {
@@ -186,5 +246,3 @@ describe("trigger signal bus — Red zone (>=100%)", () => {
     expect(greenState.zone).toBe(ActivityZone.Green);
   });
 });
-```
-

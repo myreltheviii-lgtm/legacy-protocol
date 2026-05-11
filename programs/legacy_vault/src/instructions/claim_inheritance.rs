@@ -5,12 +5,16 @@
 // PDA to the beneficiary's wallet, then closes both the vault and activity
 // accounts.
 //
-// Why close via Anchor's constraint rather than manual lamport manipulation:
-// Anchor's `close = X` constraint atomically zeroes the discriminator,
-// transfers ALL lamports to X, and lets the runtime garbage-collect the
-// account — the rent reserve is returned to the beneficiary along with
-// deposited funds. Manual subtraction of rent_exempt_min would permanently
-// lock the rent reserve with no recovery path.
+// This instruction is for NON-SHIELDED vaults (legacy mode) where the
+// beneficiary is a standard Solana wallet. For Cloak-shielded vaults,
+// guardians call `record_cloak_claim` after completing the Cloak
+// shield-to-shield transfer off-chain.
+//
+// Identity verification:
+//   vault.beneficiary_utxo_pubkey stores 32 raw bytes. For non-shielded
+//   vaults these bytes ARE the beneficiary's Solana pubkey. We reconstruct
+//   the Pubkey via Pubkey::from() and compare explicitly rather than using
+//   Anchor's `has_one` macro (which requires a Pubkey-typed field).
 
 use anchor_lang::prelude::*;
 use crate::constants::{ACTIVITY_SEED, VAULT_SEED};
@@ -26,7 +30,6 @@ pub struct ClaimInheritance<'info> {
         mut,
         seeds  = [VAULT_SEED, vault.owner.as_ref(), &vault.vault_index.to_le_bytes()],
         bump   = vault.bump,
-        has_one = beneficiary @ LegacyError::UnauthorisedBeneficiary,
         close  = beneficiary,
     )]
     pub vault: Account<'info, VaultAccount>,
@@ -49,9 +52,22 @@ pub fn handler(ctx: Context<ClaimInheritance>) -> Result<()> {
     require!(!vault.is_claimed,          LegacyError::VaultAlreadyClaimed);
     require!(!vault.is_emergency_swept,  LegacyError::VaultAlreadySwept);
 
-    // Capture the combined lamport balance from both accounts before Anchor's
-    // close constraint drains them. Both accounts are closed to the
-    // beneficiary, so the total received is the sum of both balances.
+    // For shielded vaults, use record_cloak_claim instead. Calling
+    // claim_inheritance on a shielded vault would close the Anchor accounts
+    // without having executed the Cloak transfer, permanently losing the
+    // utxo_commitment reference needed by guardians.
+    require!(!vault.is_shielded(), LegacyError::CovenantTypeMismatch);
+
+    // Identity check: reconstruct the Pubkey from raw bytes and compare.
+    // For non-shielded vaults, beneficiary_utxo_pubkey holds the Solana
+    // wallet pubkey bytes stored by initialize_vault.
+    let expected_beneficiary = Pubkey::from(vault.beneficiary_utxo_pubkey);
+    require_keys_eq!(
+        ctx.accounts.beneficiary.key(),
+        expected_beneficiary,
+        LegacyError::UnauthorisedBeneficiary
+    );
+
     let vault_lamports    = vault.to_account_info().lamports();
     let activity_lamports = ctx.accounts.activity.to_account_info().lamports();
     let total_lamports    = vault_lamports
@@ -62,9 +78,9 @@ pub fn handler(ctx: Context<ClaimInheritance>) -> Result<()> {
     vault.deposited_lamports = 0;
 
     emit!(InheritanceClaimed {
-        vault:        vault.key(),
-        beneficiary:  vault.beneficiary,
-        lamports:     total_lamports,
+        vault:       vault.key(),
+        beneficiary: ctx.accounts.beneficiary.key(),
+        lamports:    total_lamports,
         claimed_slot: Clock::get()?.slot,
     });
 
@@ -75,7 +91,6 @@ pub fn handler(ctx: Context<ClaimInheritance>) -> Result<()> {
 pub struct InheritanceClaimed {
     pub vault:        Pubkey,
     pub beneficiary:  Pubkey,
-    /// Total lamports transferred: vault PDA balance + activity PDA balance.
     pub lamports:     u64,
     pub claimed_slot: u64,
 }

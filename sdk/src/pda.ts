@@ -1,102 +1,75 @@
 // sdk/src/pda.ts
 //
-// PDA derivation helpers. Every seed layout here must exactly match the
-// constants and PDA constraints in the Rust program. A mismatch produces a
-// different address that silently fails account lookups — seeds are the
-// contract between client and program.
+// PDA derivation helpers. Must produce identical addresses to the on-chain
+// seeds in constants.rs — any mismatch causes silent account-not-found errors.
 //
-// All functions use findProgramAddressSync (no I/O) and return both the
-// address and the canonical bump so callers can pass the bump to instructions
-// that require it for signer reconstruction.
+// IMPORTANT — browser compatibility:
+//   Buffer.writeBigUInt64LE is a Node.js-specific method absent from the
+//   `buffer` npm package that browsers receive. All bigint→LE serialisation
+//   is done with pure Uint8Array + BigInt arithmetic so this module works
+//   identically in Node.js, browser webpack bundles, and Turbopack dev builds.
 
 import { PublicKey } from "@solana/web3.js";
-
-// ── Seed byte buffers — must match constants.rs ───────────────────────────────
 
 const VAULT_SEED    = Buffer.from("vault");
 const ACTIVITY_SEED = Buffer.from("activity");
 const GUARDIAN_SEED = Buffer.from("guardian");
 const COVENANT_SEED = Buffer.from("covenant");
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/** Encodes a u64 as an 8-byte little-endian buffer, matching to_le_bytes() in Rust. */
-function u64ToLeBytes(n: bigint): Buffer {
-  const buf = Buffer.alloc(8);
-  buf.writeBigUInt64LE(n);
-  return buf;
+/**
+ * Serialises an unsigned 64-bit integer as 8 little-endian bytes.
+ * Uses pure BigInt arithmetic — no Buffer.writeBigUInt64LE — so it works
+ * in browsers, Node.js, and every JS bundler without a native-Buffer polyfill.
+ */
+function bigUInt64LEBytes(value: bigint): Uint8Array {
+  const bytes = new Uint8Array(8);
+  let v = BigInt.asUintN(64, value);
+  for (let i = 0; i < 8; i++) {
+    bytes[i] = Number(v & 0xffn);
+    v >>= 8n;
+  }
+  return bytes;
 }
 
-// ── PDA derivation ────────────────────────────────────────────────────────────
-
-/**
- * Derives the VaultAccount PDA.
- * Seeds: ["vault", owner_pubkey_bytes, vault_index_le_u64_bytes]
- *
- * The vault_index is the same value the owner passed to initialize_vault.
- * One owner can maintain multiple vaults by incrementing this index.
- */
 export function deriveVaultPda(
   programId:  PublicKey,
   owner:      PublicKey,
   vaultIndex: bigint,
 ): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
-    [VAULT_SEED, owner.toBuffer(), u64ToLeBytes(vaultIndex)],
+    [VAULT_SEED, owner.toBuffer(), bigUInt64LEBytes(vaultIndex)],
     programId,
   );
 }
 
-/**
- * Derives the ActivityAccount PDA.
- * Seeds: ["activity", vault_pubkey_bytes]
- *
- * One ActivityAccount exists per vault. It is created alongside the vault
- * in initialize_vault and closed alongside it in close_vault / claim_inheritance.
- */
 export function deriveActivityPda(
   programId: PublicKey,
-  vault:     PublicKey,
+  vaultPda:  PublicKey,
 ): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
-    [ACTIVITY_SEED, vault.toBuffer()],
+    [ACTIVITY_SEED, vaultPda.toBuffer()],
     programId,
   );
 }
 
-/**
- * Derives the GuardianAccount PDA for a specific (vault, guardian) pair.
- * Seeds: ["guardian", vault_pubkey_bytes, guardian_pubkey_bytes]
- *
- * Each (vault, guardian) pair has a unique PDA. The guardian's status
- * (active, removal pending) lives in this account rather than in the vault
- * so it can be read without loading the vault.
- */
 export function deriveGuardianPda(
   programId: PublicKey,
-  vault:     PublicKey,
+  vaultPda:  PublicKey,
   guardian:  PublicKey,
 ): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
-    [GUARDIAN_SEED, vault.toBuffer(), guardian.toBuffer()],
+    [GUARDIAN_SEED, vaultPda.toBuffer(), guardian.toBuffer()],
     programId,
   );
 }
 
-/**
- * Derives the CovenantAccount PDA for a specific (vault, covenantIndex) pair.
- * Seeds: ["covenant", vault_pubkey_bytes, covenant_index_le_u64_bytes]
- *
- * The covenant_index is taken from vault.covenant_counter BEFORE increment,
- * so the first covenant for a vault has index 0, the second has index 1, etc.
- */
 export function deriveCovenantPda(
   programId:     PublicKey,
-  vault:         PublicKey,
+  vaultPda:      PublicKey,
   covenantIndex: bigint,
 ): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
-    [COVENANT_SEED, vault.toBuffer(), u64ToLeBytes(covenantIndex)],
+    [COVENANT_SEED, vaultPda.toBuffer(), bigUInt64LEBytes(covenantIndex)],
     programId,
   );
 }

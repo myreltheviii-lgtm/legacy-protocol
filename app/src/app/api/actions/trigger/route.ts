@@ -1,4 +1,4 @@
-// app/src/app/api/actions/trigger/route.ts
+export const dynamic = "force-static";
 //
 // Solana Actions endpoint for trigger_inheritance.
 //
@@ -12,19 +12,13 @@
 //     trigger_inheritance is permissionless: any account can be the caller.
 
 import { NextRequest, NextResponse } from "next/server";
-import { PublicKey, Transaction, Connection } from "@solana/web3.js";
+import { PublicKey, Transaction } from "@solana/web3.js";
 import { fetchVault, buildTriggerInheritanceIx } from "@legacy-protocol/sdk";
 import { computeInactivityScore } from "@legacy-protocol/sdk";
-
-const PROGRAM_ID_STR =
-  process.env.NEXT_PUBLIC_LEGACY_VAULT_PROGRAM_ID ??
-  "7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe";
-
-const PROGRAM_ID = new PublicKey(PROGRAM_ID_STR);
-
-const RPC_ENDPOINT =
-  process.env.NEXT_PUBLIC_SOLANA_RPC_ENDPOINT ??
-  "https://api.mainnet-beta.solana.com";
+// PROGRAM_ID and getConnection() are the single source of truth for this app.
+// They must never be re-declared or hardcoded in any file other than
+// app/src/lib/sdk.ts. API routes import them from there.
+import { PROGRAM_ID, getConnection } from "@/lib/sdk";
 
 const ACTIONS_CORS_HEADERS = {
   "Access-Control-Allow-Origin":  "*",
@@ -50,7 +44,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const connection = new Connection(RPC_ENDPOINT, "confirmed");
+    const connection = getConnection();
     const vaultPk    = new PublicKey(vaultAddress);
 
     const [vault, currentSlot] = await Promise.all([
@@ -136,7 +130,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const connection = new Connection(RPC_ENDPOINT, "confirmed");
+    const connection = getConnection();
     const vaultPk    = new PublicKey(vaultAddress);
     const callerPk   = new PublicKey(body.account);
 
@@ -201,4 +195,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-

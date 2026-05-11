@@ -5,7 +5,7 @@ import { Keypair, PublicKey, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web
 import { LegacyVault }       from "../../target/types/legacy_vault";
 import IDL                   from "../../target/idl/legacy_vault.json";
 
-const PROGRAM_ID    = new PublicKey("LGCYvau1tXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+const PROGRAM_ID    = new PublicKey("4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd");
 const VAULT_SEED    = Buffer.from("vault");
 const ACTIVITY_SEED = Buffer.from("activity");
 
@@ -17,11 +17,13 @@ function deriveActivityPda(vaultPda: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync([ACTIVITY_SEED, vaultPda.toBuffer()], PROGRAM_ID);
 }
 
+// A non-zero 32-byte Cloak UTXO pubkey for the beneficiary identity (v2 arg, not account).
+const BENEFICIARY_UTXO_PUBKEY = Array.from({ length: 32 }, (_, i) => i + 1);
+
 describe("trigger_inheritance", () => {
   let context:    ProgramTestContext;
   let program:    Program<LegacyVault>;
   let owner:      Keypair;
-  let beneficiary: Keypair;
   let caller:     Keypair;
   let vaultPda:   PublicKey;
   let activityPda: PublicKey;
@@ -30,9 +32,8 @@ describe("trigger_inheritance", () => {
     context  = await startAnchor(".", [{ name: "legacy_vault", programId: PROGRAM_ID }], []);
     const provider = new BankrunProvider(context);
     program  = new Program<LegacyVault>(IDL as any, PROGRAM_ID, provider);
-    owner       = Keypair.generate();
-    beneficiary = Keypair.generate();
-    caller      = Keypair.generate();
+    owner    = Keypair.generate();
+    caller   = Keypair.generate();
 
     for (const kp of [owner, caller]) {
       context.setAccount(kp.publicKey, { lamports: 10 * LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
@@ -41,16 +42,23 @@ describe("trigger_inheritance", () => {
     [vaultPda]    = deriveVaultPda(owner.publicKey, new BN(0));
     [activityPda] = deriveActivityPda(vaultPda);
 
-    await program.methods.initializeVault(new BN(0), new BN(5_000_000)).accounts({ owner: owner.publicKey, beneficiary: beneficiary.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId }).signers([owner]).rpc();
+    // v2 API: initializeVault(vaultIndex, inactivityThresholdSlots, beneficiaryUtxoPubkey).
+    // trigger_inheritance has ONLY 2 accounts: caller + vault. No activity account.
+    await program.methods
+      .initializeVault(new BN(0), new BN(5_000_000), BENEFICIARY_UTXO_PUBKEY)
+      .accounts({ owner: owner.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId })
+      .signers([owner])
+      .rpc();
   });
 
   it("happy path: is_triggered=true at threshold_crossed()", async () => {
     const vault0 = await program.account.vaultAccount.fetch(vaultPda);
-    const lastSlot = BigInt(vault0.lastCheckInSlot.toString());
+    const lastSlot  = BigInt(vault0.lastCheckInSlot.toString());
     const threshold = BigInt(vault0.inactivityThresholdSlots.toString());
 
     context.warpToSlot(lastSlot + threshold);
 
+    // trigger_inheritance accounts: caller(signerRo), vault(rw). No activity account.
     await program.methods.triggerInheritance().accounts({ caller: caller.publicKey, vault: vaultPda }).signers([caller]).rpc();
 
     const vault = await program.account.vaultAccount.fetch(vaultPda);
@@ -101,5 +109,3 @@ describe("trigger_inheritance", () => {
     expect(vault.isTriggered).toBe(true);
   });
 });
-```
-

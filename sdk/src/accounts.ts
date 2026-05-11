@@ -1,158 +1,174 @@
 // sdk/src/accounts.ts
 //
-// Account fetchers. Each function performs a getAccountInfo call, validates
-// the discriminator, and deserialises the binary data into a typed struct.
+// Low-level account deserializers AND high-level fetch helpers.
+// Parses raw program account bytes into typed structs without going through
+// the Anchor IDL client, and provides Connection-based fetch wrappers for
+// all four account types.
 //
-// Discriminators are computed using Node's built-in crypto module (no external
-// dependency). Anchor computes account discriminators as the first 8 bytes of
-// sha256("account:StructName"). A discriminator mismatch means the account at
-// that address belongs to a different program or is a different account type —
-// both are treated as not-found rather than silent misparse.
-//
-// u64 fields are returned as bigint. Pubkeys are returned as base58 strings.
-// The caller never needs to import PublicKey to consume an account struct.
+// These parsers must exactly mirror constants.rs byte offsets.
+// VaultAccount layout: 168 bytes (v2, with Cloak integration fields).
 
 import { Connection, PublicKey } from "@solana/web3.js";
-import { createHash } from "node:crypto";
-import {
-  VaultAccount,
-  ActivityAccount,
-  GuardianAccount,
-  CovenantAccount,
-  CovenantType,
-  VaultWithAddress,
-} from "./types";
+import type { VaultAccount, ActivityAccount, GuardianAccount, CovenantAccount, GuardianWithAddress } from "./types";
+import { CovenantType, ActivityZone } from "./types";
 
-// ── Discriminator computation ─────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-function accountDiscriminator(name: string): Buffer {
-  return Buffer.from(
-    createHash("sha256").update(`account:${name}`).digest(),
-  ).slice(0, 8);
-}
+export const VAULT_SIZE    = 168;
+export const ACTIVITY_SIZE = 74;
+export const GUARDIAN_SIZE = 90;
 
-const VAULT_DISC    = accountDiscriminator("VaultAccount");
-const ACTIVITY_DISC = accountDiscriminator("ActivityAccount");
-const GUARDIAN_DISC = accountDiscriminator("GuardianAccount");
-const COVENANT_DISC = accountDiscriminator("CovenantAccount");
-
-// ── Protocol constants mirrored from constants.rs ─────────────────────────────
-
-// The deserialiseCovenant function validates signers length against this cap.
-// A covenant with more than MAX_COVENANT_SIGNERS declared signers cannot have
-// been produced by the on-chain program — the guardian_sign instruction
-// enforces the cap at write time. Rejecting such an account prevents reading
-// past the expected buffer region on any malformed or adversarial account data.
+// Maximum signers in a CovenantAccount Vec<Pubkey> — mirrors MAX_COVENANT_SIGNERS
+// in constants.rs. A parsed count exceeding this indicates data corruption.
 const MAX_COVENANT_SIGNERS = 10;
 
-// ── Binary deserialisers ──────────────────────────────────────────────────────
+// ── Low-level helpers ─────────────────────────────────────────────────────────
 
-/** Reads a 32-byte Pubkey from a Buffer at the given offset, returns base58 string. */
 function readPubkey(buf: Buffer, offset: number): string {
   return new PublicKey(buf.slice(offset, offset + 32)).toBase58();
 }
 
-/** Reads an 8-byte little-endian u64 from a Buffer at the given offset. */
 function readU64(buf: Buffer, offset: number): bigint {
-  return buf.readBigUInt64LE(offset);
+  let val = 0n; for (let i = 7; i >= 0; i--) { val = (val << 8n) | BigInt(buf[offset + i]); } return val;
 }
 
-/** Reads a 4-byte little-endian u32 from a Buffer at the given offset. */
-function readU32(buf: Buffer, offset: number): number {
-  return buf.readUInt32LE(offset);
+function readBytes32Hex(buf: Buffer, offset: number): string {
+  return buf.slice(offset, offset + 32).toString("hex");
 }
 
-function deserialiseVault(data: Buffer): VaultAccount | null {
-  if (data.length < 128) return null;
-  if (!VAULT_DISC.equals(data.slice(0, 8))) return null;
+// ── VaultAccount deserializer ─────────────────────────────────────────────────
+
+/**
+ * Deserialises a raw VaultAccount buffer (168 bytes).
+ *
+ * Byte layout:
+ *   [0..8]    disc
+ *   [8..40]   owner
+ *   [40..72]  beneficiary_utxo_pubkey (32 raw bytes, hex-encoded in TS)
+ *   [72]      guardian_count
+ *   [73]      m_of_n_threshold
+ *   [74..82]  inactivity_threshold_slots
+ *   [82..90]  last_check_in_slot
+ *   [90..98]  created_slot
+ *   [98..106] deposited_lamports
+ *   [106..114] covenant_counter
+ *   [114..122] vault_index
+ *   [122..154] utxo_commitment (hex-encoded)
+ *   [154..162] utxo_leaf_index
+ *   [162]     is_triggered
+ *   [163]     is_claimed
+ *   [164]     is_emergency_swept
+ *   [165]     warning_75_sent
+ *   [166]     warning_90_sent
+ *   [167]     bump
+ */
+export function deserialiseVault(buf: Buffer): VaultAccount | null {
+  if (buf.length < VAULT_SIZE) return null;
+
+  const beneficiaryUtxoPubkeyHex = readBytes32Hex(buf, 40);
 
   return {
-    owner:                    readPubkey(data, 8),
-    beneficiary:              readPubkey(data, 40),
-    guardianCount:            data[72],
-    mOfNThreshold:            data[73],
-    inactivityThresholdSlots: readU64(data, 74),
-    lastCheckInSlot:          readU64(data, 82),
-    createdSlot:              readU64(data, 90),
-    depositedLamports:        readU64(data, 98),
-    covenantCounter:          readU64(data, 106),
-    vaultIndex:               readU64(data, 114),
-    isTriggered:              data[122] === 1,
-    isClaimed:                data[123] === 1,
-    isEmergencySwept:         data[124] === 1,
-    warning75Sent:            data[125] === 1,
-    warning90Sent:            data[126] === 1,
-    bump:                     data[127],
+    owner:                    readPubkey(buf, 8),
+    beneficiaryUtxoPubkey:    beneficiaryUtxoPubkeyHex,
+    // Backward-compat alias: for non-shielded vaults the bytes at [40..72]
+    // are a Solana pubkey; try to present as base58 for callers expecting it.
+    beneficiary:              tryHexToBase58(beneficiaryUtxoPubkeyHex),
+    guardianCount:            buf[72],
+    mOfNThreshold:            buf[73],
+    inactivityThresholdSlots: readU64(buf, 74),
+    lastCheckInSlot:          readU64(buf, 82),
+    createdSlot:              readU64(buf, 90),
+    depositedLamports:        readU64(buf, 98),
+    covenantCounter:          readU64(buf, 106),
+    vaultIndex:               readU64(buf, 114),
+    utxoCommitment:           readBytes32Hex(buf, 122),
+    utxoLeafIndex:            readU64(buf, 154),
+    isTriggered:              buf[162] === 1,
+    isClaimed:                buf[163] === 1,
+    isEmergencySwept:         buf[164] === 1,
+    warning75Sent:            buf[165] === 1,
+    warning90Sent:            buf[166] === 1,
+    bump:                     buf[167],
   };
 }
 
-function deserialiseActivity(data: Buffer): ActivityAccount | null {
-  if (data.length < 74) return null;
-  if (!ACTIVITY_DISC.equals(data.slice(0, 8))) return null;
+/** Returns true if the vault has a shielded Cloak deposit recorded. */
+export function isVaultShielded(vault: VaultAccount): boolean {
+  return vault.utxoCommitment !== "0".repeat(64);
+}
+
+// ── ActivityAccount deserializer ──────────────────────────────────────────────
+
+export function deserialiseActivity(buf: Buffer): ActivityAccount | null {
+  if (buf.length < ACTIVITY_SIZE) return null;
 
   return {
-    vault:              readPubkey(data, 8),
-    checkinCount:       readU64(data, 40),
-    sumOfIntervals:     readU64(data, 48),
-    lastInterval:       readU64(data, 56),
-    anomalyFlagged:     data[64] === 1,
-    anomalyFlaggedSlot: readU64(data, 65),
-    bump:               data[73],
+    vault:              readPubkey(buf, 8),
+    checkinCount:       readU64(buf, 40),
+    sumOfIntervals:     readU64(buf, 48),
+    lastInterval:       readU64(buf, 56),
+    anomalyFlagged:     buf[64] === 1,
+    anomalyFlaggedSlot: readU64(buf, 65),
+    bump:               buf[73],
   };
 }
 
-function deserialiseGuardian(data: Buffer): GuardianAccount | null {
-  if (data.length < 90) return null;
-  if (!GUARDIAN_DISC.equals(data.slice(0, 8))) return null;
+// ── GuardianAccount deserializer ──────────────────────────────────────────────
+
+export function deserialiseGuardian(buf: Buffer): GuardianAccount | null {
+  if (buf.length < GUARDIAN_SIZE) return null;
 
   return {
-    vault:                readPubkey(data, 8),
-    guardian:             readPubkey(data, 40),
-    isActive:             data[72] === 1,
-    addedSlot:            readU64(data, 73),
-    removalRequestedSlot: readU64(data, 81),
-    bump:                 data[89],
+    vault:                readPubkey(buf, 8),
+    guardian:             readPubkey(buf, 40),
+    isActive:             buf[72] === 1,
+    addedSlot:            readU64(buf, 73),
+    removalRequestedSlot: readU64(buf, 81),
+    bump:                 buf[89],
   };
 }
 
-function deserialiseCovenant(data: Buffer): CovenantAccount | null {
-  // Minimum fixed-region size: 8 disc + 32 vault + 1 type + 32 target + 4 len
-  // = 77 bytes before the variable signer array begins.
-  if (data.length < 77) return null;
-  if (!COVENANT_DISC.equals(data.slice(0, 8))) return null;
+// ── CovenantAccount deserializer ──────────────────────────────────────────────
 
-  const vault        = readPubkey(data, 8);
-  const covenantType = data[40] as CovenantType;
-  const target       = readPubkey(data, 41);
-  const signersLen   = readU32(data, 73);
+export function deserialiseCovenantType(discriminant: number): CovenantType {
+  switch (discriminant) {
+    case 0: return CovenantType.EmergencySweep;
+    case 1: return CovenantType.BeneficiaryChange;
+    case 2: return CovenantType.GuardianRemoval;
+    default: return CovenantType.EmergencySweep;
+  }
+}
 
-  // The on-chain program caps the signer list at MAX_COVENANT_SIGNERS via
-  // the guardian_sign instruction. A declared length exceeding this cap
-  // indicates corrupted or adversarial account data — reject rather than
-  // reading past the expected buffer region.
-  if (signersLen > MAX_COVENANT_SIGNERS) return null;
+export function deserialiseCovenantFromBuffer(buf: Buffer): CovenantAccount | null {
+  if (buf.length < 8) return null;
 
-  // Validate the buffer is large enough to hold the declared signer array
-  // plus all remaining fixed fields (1 + 8 + 8 + 8 + 8 + 1 + 1 = 35 bytes).
-  const signersStart   = 77;
-  const signersBytes   = signersLen * 32;
-  const fixedTailBytes = 35;
-  if (data.length < signersStart + signersBytes + fixedTailBytes) return null;
+  let offset = 8;
+  const vault         = readPubkey(buf, offset); offset += 32;
+  const covenantType  = deserialiseCovenantType(buf[offset]); offset += 1;
+  const target        = readPubkey(buf, offset); offset += 32;
+
+  // Guard: if the signers vec length is unreasonable, treat as corrupted data.
+  if (offset + 4 > buf.length) return null;
+  const signerCount   = buf.readUInt32LE(offset); offset += 4;
+
+  if (signerCount > MAX_COVENANT_SIGNERS) return null;
+
+  if (offset + signerCount * 32 > buf.length) return null;
 
   const signers: string[] = [];
-  for (let i = 0; i < signersLen; i++) {
-    signers.push(readPubkey(data, signersStart + i * 32));
+  for (let i = 0; i < signerCount; i++) {
+    signers.push(readPubkey(buf, offset)); offset += 32;
   }
 
-  let cursor = signersStart + signersBytes;
+  if (offset + 1 + 8 + 8 + 8 + 8 + 1 + 1 > buf.length) return null;
 
-  const requiredSignatures     = data[cursor];      cursor += 1;
-  const createdSlot            = readU64(data, cursor); cursor += 8;
-  const timelockSlots          = readU64(data, cursor); cursor += 8;
-  const signaturesCompleteSlot = readU64(data, cursor); cursor += 8;
-  const covenantIndex          = readU64(data, cursor); cursor += 8;
-  const isExecuted             = data[cursor] === 1;  cursor += 1;
-  const bump                   = data[cursor];
+  const requiredSignatures     = buf[offset]; offset += 1;
+  const createdSlot            = readU64(buf, offset); offset += 8;
+  const timelockSlots          = readU64(buf, offset); offset += 8;
+  const signaturesCompleteSlot = readU64(buf, offset); offset += 8;
+  const covenantIndex          = readU64(buf, offset); offset += 8;
+  const isExecuted             = buf[offset] === 1; offset += 1;
+  const bump                   = buf[offset];
 
   return {
     vault,
@@ -169,13 +185,17 @@ function deserialiseCovenant(data: Buffer): CovenantAccount | null {
   };
 }
 
-// ── Public fetchers ───────────────────────────────────────────────────────────
+// ── High-level fetch helpers ──────────────────────────────────────────────────
+//
+// These wrappers accept (connection, programId, pubkey) for a consistent
+// API across all account types. programId is used for getProgramAccounts
+// queries and for structural consistency — single-account fetches derive
+// the data directly from the PDA address and do not require programId to
+// locate the account.
 
 /**
  * Fetches and deserialises a VaultAccount.
- * Returns null if the account does not exist or has the wrong discriminator.
- * Throws on RPC transport errors — callers must distinguish "not found" from
- * "network failure" to avoid incorrectly concluding a vault is gone.
+ * Returns null if the account does not exist or fails to deserialise.
  */
 export async function fetchVault(
   connection: Connection,
@@ -183,7 +203,7 @@ export async function fetchVault(
   vaultPda:   PublicKey,
 ): Promise<VaultAccount | null> {
   const info = await connection.getAccountInfo(vaultPda, "confirmed");
-  if (!info || !info.data) return null;
+  if (!info) return null;
   return deserialiseVault(Buffer.from(info.data));
 }
 
@@ -196,7 +216,7 @@ export async function fetchActivity(
   activityPda: PublicKey,
 ): Promise<ActivityAccount | null> {
   const info = await connection.getAccountInfo(activityPda, "confirmed");
-  if (!info || !info.data) return null;
+  if (!info) return null;
   return deserialiseActivity(Buffer.from(info.data));
 }
 
@@ -204,12 +224,12 @@ export async function fetchActivity(
  * Fetches and deserialises a GuardianAccount.
  */
 export async function fetchGuardian(
-  connection:  Connection,
-  _programId:  PublicKey,
-  guardianPda: PublicKey,
+  connection:         Connection,
+  _programId:         PublicKey,
+  guardianAccountPda: PublicKey,
 ): Promise<GuardianAccount | null> {
-  const info = await connection.getAccountInfo(guardianPda, "confirmed");
-  if (!info || !info.data) return null;
+  const info = await connection.getAccountInfo(guardianAccountPda, "confirmed");
+  if (!info) return null;
   return deserialiseGuardian(Buffer.from(info.data));
 }
 
@@ -222,130 +242,127 @@ export async function fetchCovenant(
   covenantPda: PublicKey,
 ): Promise<CovenantAccount | null> {
   const info = await connection.getAccountInfo(covenantPda, "confirmed");
-  if (!info || !info.data) return null;
-  return deserialiseCovenant(Buffer.from(info.data));
+  if (!info) return null;
+  return deserialiseCovenantFromBuffer(Buffer.from(info.data));
 }
 
 /**
- * Fetches all VaultAccounts owned by a specific owner, using getProgramAccounts
- * with a memcmp filter on the owner field (bytes 8–39 of the account data).
- *
- * This is the correct approach rather than iterating locally: the RPC node
- * applies the filter server-side and only returns matching accounts, bounding
- * the response size to the number of vaults the owner controls.
+ * Fetches all active GuardianAccounts for a vault using getProgramAccounts.
+ * The vault pubkey is stored at offset 8 in the GuardianAccount layout,
+ * which is used as the memcmp filter.
+ */
+export async function fetchAllGuardiansForVault(
+  connection: Connection,
+  programId:  PublicKey,
+  vaultPda:   PublicKey,
+): Promise<GuardianWithAddress[]> {
+  // vault field is at offset 8 (after discriminator) in GuardianAccount.
+  const accounts = await connection.getProgramAccounts(programId, {
+    commitment: "confirmed",
+    filters: [
+      { dataSize: GUARDIAN_SIZE },
+      { memcmp: { offset: 8, bytes: vaultPda.toBase58() } },
+    ],
+  });
+
+  const results: GuardianWithAddress[] = [];
+  for (const { pubkey, account } of accounts) {
+    const parsed = deserialiseGuardian(Buffer.from(account.data));
+    if (parsed && parsed.vault === vaultPda.toBase58()) {
+      results.push({ publicKey: pubkey.toBase58(), account: parsed });
+    }
+  }
+  return results;
+}
+
+/**
+ * Fetches all CovenantAccounts for a vault using getProgramAccounts.
+ * The vault pubkey is stored at offset 8 in the CovenantAccount layout.
+ */
+export async function fetchAllCovenantsForVault(
+  connection: Connection,
+  programId:  PublicKey,
+  vaultPda:   PublicKey,
+): Promise<Array<{ publicKey: string; account: CovenantAccount }>> {
+  const accounts = await connection.getProgramAccounts(programId, {
+    commitment: "confirmed",
+    filters: [
+      { memcmp: { offset: 8, bytes: vaultPda.toBase58() } },
+    ],
+  });
+
+  const results: Array<{ publicKey: string; account: CovenantAccount }> = [];
+  for (const { pubkey, account } of accounts) {
+    const parsed = deserialiseCovenantFromBuffer(Buffer.from(account.data));
+    if (parsed && parsed.vault === vaultPda.toBase58()) {
+      results.push({ publicKey: pubkey.toBase58(), account: parsed });
+    }
+  }
+  return results;
+}
+
+/**
+ * Fetches all VaultAccounts where beneficiary_utxo_pubkey matches the given
+ * Solana pubkey bytes. For non-shielded vaults only — beneficiary_utxo_pubkey
+ * at offset 40 stores the raw bytes of the beneficiary's Solana pubkey.
+ */
+export async function fetchAllVaultsForBeneficiary(
+  connection:  Connection,
+  programId:   PublicKey,
+  beneficiary: PublicKey,
+): Promise<Array<{ publicKey: string; account: VaultAccount }>> {
+  // beneficiary_utxo_pubkey is at offset 40 in the vault account.
+  // For non-shielded vaults, these bytes = the Solana pubkey bytes.
+  const accounts = await connection.getProgramAccounts(programId, {
+    commitment: "confirmed",
+    filters: [
+      { dataSize: VAULT_SIZE },
+      { memcmp: { offset: 40, bytes: beneficiary.toBase58() } },
+    ],
+  });
+
+  const results: Array<{ publicKey: string; account: VaultAccount }> = [];
+  for (const { pubkey, account } of accounts) {
+    const parsed = deserialiseVault(Buffer.from(account.data));
+    if (parsed) results.push({ publicKey: pubkey.toBase58(), account: parsed });
+  }
+  return results;
+}
+
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+function tryHexToBase58(hex: string): string {
+  try {
+    const bytes = new Uint8Array(hex.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
+    return new PublicKey(bytes).toBase58();
+  } catch {
+    return hex;
+  }
+}
+
+/**
+ * Fetches all VaultAccounts where owner matches the given pubkey.
+ * Owner is stored at offset 8 in the VaultAccount layout (after discriminator).
  */
 export async function fetchAllVaultsForOwner(
   connection: Connection,
   programId:  PublicKey,
   owner:      PublicKey,
-): Promise<VaultWithAddress[]> {
+): Promise<Array<{ publicKey: string; account: VaultAccount }>> {
   const accounts = await connection.getProgramAccounts(programId, {
     commitment: "confirmed",
     filters: [
-      // The vault account size filter prevents false positives from other
-      // account types whose first 8 bytes happen to contain the owner pubkey
-      // at the same offset. VaultAccount is always exactly 128 bytes.
-      { dataSize: 128 },
-      {
-        memcmp: {
-          offset: 8, // skip 8-byte discriminator; owner Pubkey starts here
-          bytes:  owner.toBase58(),
-        },
-      },
+      { dataSize: VAULT_SIZE },
+      { memcmp: { offset: 8, bytes: owner.toBase58() } },
     ],
   });
 
-  const results: VaultWithAddress[] = [];
-
+  const results: Array<{ publicKey: string; account: VaultAccount }> = [];
   for (const { pubkey, account } of accounts) {
-    const vault = deserialiseVault(Buffer.from(account.data));
-    if (vault) {
-      results.push({ publicKey: pubkey.toBase58(), account: vault });
+    const parsed = deserialiseVault(Buffer.from(account.data));
+    if (parsed && parsed.owner === owner.toBase58()) {
+      results.push({ publicKey: pubkey.toBase58(), account: parsed });
     }
   }
-
-  // Sort by vault_index ascending so the caller always sees vaults in creation order.
-  results.sort((a, b) => (a.account.vaultIndex < b.account.vaultIndex ? -1 : 1));
-
-  return results;
-}
-
-/**
- * Fetches all active GuardianAccounts for a given vault by scanning program
- * accounts filtered by the vault pubkey at the guardian account's vault field
- * (bytes 8–39). Returns only guardians where is_active == true.
- */
-export async function fetchAllGuardiansForVault(
-  connection: Connection,
-  programId:  PublicKey,
-  vault:      PublicKey,
-): Promise<Array<{ publicKey: string; account: GuardianAccount }>> {
-  const accounts = await connection.getProgramAccounts(programId, {
-    commitment: "confirmed",
-    filters: [
-      { dataSize: 90 },
-      {
-        memcmp: {
-          offset: 8, // vault field starts at byte 8 of GuardianAccount
-          bytes:  vault.toBase58(),
-        },
-      },
-      {
-        memcmp: {
-          offset: 72, // is_active: bool — byte value 1 = active, base58 "2"
-          bytes:  "2",
-        },
-      },
-    ],
-  });
-
-  const results: Array<{ publicKey: string; account: GuardianAccount }> = [];
-
-  for (const { pubkey, account } of accounts) {
-    const guardian = deserialiseGuardian(Buffer.from(account.data));
-    if (guardian && guardian.isActive) {
-      results.push({ publicKey: pubkey.toBase58(), account: guardian });
-    }
-  }
-
-  return results;
-}
-
-/**
- * Fetches all CovenantAccounts for a given vault. Returns all covenants,
- * including those with is_executed = true, so the caller can display the
- * full covenant history.
- */
-export async function fetchAllCovenantsForVault(
-  connection: Connection,
-  programId:  PublicKey,
-  vault:      PublicKey,
-): Promise<Array<{ publicKey: string; account: CovenantAccount }>> {
-  const accounts = await connection.getProgramAccounts(programId, {
-    commitment: "confirmed",
-    filters: [
-      { dataSize: 432 },
-      {
-        memcmp: {
-          offset: 8, // vault field starts at byte 8 of CovenantAccount
-          bytes:  vault.toBase58(),
-        },
-      },
-    ],
-  });
-
-  const results: Array<{ publicKey: string; account: CovenantAccount }> = [];
-
-  for (const { pubkey, account } of accounts) {
-    const covenant = deserialiseCovenant(Buffer.from(account.data));
-    if (covenant) {
-      results.push({ publicKey: pubkey.toBase58(), account: covenant });
-    }
-  }
-
-  results.sort((a, b) =>
-    a.account.covenantIndex < b.account.covenantIndex ? -1 : 1,
-  );
-
   return results;
 }

@@ -24,7 +24,7 @@ import {
   splitSecret,
 } from "@legacy-protocol/sdk";
 
-const PROGRAM_ID = new PublicKey("7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe");
+const PROGRAM_ID = new PublicKey("4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd");
 ```
 
 ## PDA Helpers
@@ -667,7 +667,7 @@ import {
   ActivityZone,
 } from "@legacy-protocol/sdk";
 
-const PROGRAM_ID = new PublicKey("7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe");
+const PROGRAM_ID = new PublicKey("4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd");
 const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 
 async function lifecycle(

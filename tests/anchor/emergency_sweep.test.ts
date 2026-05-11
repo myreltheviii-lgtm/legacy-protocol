@@ -5,7 +5,7 @@ import { Keypair, PublicKey, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web
 import { LegacyVault }       from "../../target/types/legacy_vault";
 import IDL                   from "../../target/idl/legacy_vault.json";
 
-const PROGRAM_ID    = new PublicKey("LGCYvau1tXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+const PROGRAM_ID    = new PublicKey("4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd");
 const VAULT_SEED    = Buffer.from("vault");
 const ACTIVITY_SEED = Buffer.from("activity");
 const GUARDIAN_SEED = Buffer.from("guardian");
@@ -31,6 +31,9 @@ describe("emergency_sweep", () => {
   let program:    Program<LegacyVault>;
   let owner:      Keypair;
   let beneficiary: Keypair;
+  // In v2 beneficiary identity is stored as raw bytes; the emergency_sweep instruction
+  // uses vault.beneficiaryUtxoPubkey to route funds to the correct account.
+  let beneficiaryUtxoPubkey: number[];
   let guardian:   Keypair;
   let vaultPda:   PublicKey;
   let activityPda: PublicKey;
@@ -44,6 +47,8 @@ describe("emergency_sweep", () => {
     owner       = Keypair.generate();
     beneficiary = Keypair.generate();
     guardian    = Keypair.generate();
+    // Store beneficiary's pubkey bytes so emergency_sweep can verify and route to them
+    beneficiaryUtxoPubkey = Array.from(beneficiary.publicKey.toBytes());
 
     for (const kp of [owner, guardian]) {
       context.setAccount(kp.publicKey, { lamports: 10 * LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
@@ -55,7 +60,9 @@ describe("emergency_sweep", () => {
     [gPda]        = deriveGuardianPda(vaultPda, guardian.publicKey);
     [covenantPda] = deriveCovenantPda(vaultPda, new BN(0));
 
-    await program.methods.initializeVault(new BN(0), new BN(5_000_000)).accounts({ owner: owner.publicKey, beneficiary: beneficiary.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId }).signers([owner]).rpc();
+    // v2 API: initializeVault(vaultIndex, inactivityThresholdSlots, beneficiaryUtxoPubkey).
+    // No beneficiary account — removed in v2.
+    await program.methods.initializeVault(new BN(0), new BN(5_000_000), beneficiaryUtxoPubkey).accounts({ owner: owner.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId }).signers([owner]).rpc();
     await program.methods.deposit(new BN(LAMPORTS_PER_SOL)).accounts({ owner: owner.publicKey, vault: vaultPda, systemProgram: SystemProgram.programId }).signers([owner]).rpc();
     await program.methods.addGuardian(1).accounts({ owner: owner.publicKey, vault: vaultPda, guardian: guardian.publicKey, guardianAccount: gPda, systemProgram: SystemProgram.programId }).signers([owner]).rpc();
     await program.methods.createCovenant({ emergencySweep: {} }, PublicKey.default).accounts({ guardian: guardian.publicKey, vault: vaultPda, guardianAccount: gPda, covenant: covenantPda, systemProgram: SystemProgram.programId }).signers([guardian]).rpc();
@@ -84,7 +91,6 @@ describe("emergency_sweep", () => {
   it("zero timelock — executes immediately after M-of-N", async () => {
     const covenant = await program.account.covenantAccount.fetch(covenantPda);
     expect(covenant.timelockSlots.toNumber()).toBe(0);
-    // The sweep should work without any time warp
     const caller = Keypair.generate();
     context.setAccount(caller.publicKey, { lamports: LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
 
@@ -125,17 +131,15 @@ describe("emergency_sweep", () => {
     ).rejects.toThrow(/CovenantTypeMismatch/);
   });
 
-  it("already swept rejected with VaultAlreadySwept", async () => {
+  it("already swept rejected with VaultAlreadySwept (accounts are gone after first sweep)", async () => {
     const caller = Keypair.generate();
     context.setAccount(caller.publicKey, { lamports: 2 * LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
 
     await program.methods.emergencySweep().accounts({ caller: caller.publicKey, vault: vaultPda, beneficiary: beneficiary.publicKey, covenant: covenantPda, activity: activityPda, systemProgram: SystemProgram.programId }).signers([caller]).rpc();
 
-    // Accounts are gone, second call should fail with account not found
+    // Accounts are gone — second call fails
     await expect(
       program.methods.emergencySweep().accounts({ caller: caller.publicKey, vault: vaultPda, beneficiary: beneficiary.publicKey, covenant: covenantPda, activity: activityPda, systemProgram: SystemProgram.programId }).signers([caller]).rpc(),
     ).rejects.toThrow();
   });
 });
-```
-

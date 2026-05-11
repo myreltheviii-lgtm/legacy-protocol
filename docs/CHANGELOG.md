@@ -105,9 +105,9 @@ This is version 0.1.0. No migration from a previous version is required.
 **Program:**
 - Upgraded Anchor from 0.30.1 to 0.31.1 (fixes proc-macro2/source_file incompatibility with Rust 1.85+)
 - Added `idl-build = ["anchor-lang/idl-build"]` feature to `programs/legacy_vault/Cargo.toml`
-- Replaced placeholder `declare_id!` and `Anchor.toml` program ID with real deployed address: `7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe`
+- Replaced placeholder `declare_id!` and `Anchor.toml` program ID with real deployed address: `4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd`
 - Build command: `cargo update -p proc-macro2 --precise 1.0.95 && RUSTFLAGS="--cfg=procmacro2_semver_exempt" anchor build`
-- Deployed to devnet: `7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe`
+- Deployed to devnet: `4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd`
 
 **Watcher:**
 - Replaced `Program<LegacyVault>` with `Program<any>` for Anchor 0.31.1 IDL type compatibility

@@ -1,4 +1,3 @@
-// instructions/mod.rs
 pub mod add_guardian;
 pub mod anomaly_flag;
 pub mod check_in;
@@ -12,6 +11,8 @@ pub mod emergency_sweep;
 pub mod execute_covenant;
 pub mod guardian_sign;
 pub mod initialize_vault;
+pub mod record_cloak_claim;
+pub mod record_cloak_deposit;
 pub mod remove_guardian;
 pub mod trigger_inheritance;
 
@@ -28,5 +29,7 @@ pub use emergency_sweep::*;
 pub use execute_covenant::*;
 pub use guardian_sign::*;
 pub use initialize_vault::*;
+pub use record_cloak_claim::*;
+pub use record_cloak_deposit::*;
 pub use remove_guardian::*;
 pub use trigger_inheritance::*;

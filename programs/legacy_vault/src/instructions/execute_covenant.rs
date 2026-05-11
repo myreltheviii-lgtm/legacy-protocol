@@ -3,6 +3,11 @@
 // Executes a BeneficiaryChange or GuardianRemoval covenant once M-of-N
 // signatures have been collected and the timelock has elapsed.
 // EmergencySweep covenants use the dedicated `emergency_sweep` instruction.
+//
+// Cloak change: BeneficiaryChange now stores covenant.target.to_bytes() into
+// vault.beneficiary_utxo_pubkey rather than a plain Pubkey field. The target
+// Pubkey in the covenant is the 32-byte UTXO public key of the new beneficiary,
+// passed as a Solana Pubkey for IDL compatibility (same wire encoding).
 
 use anchor_lang::prelude::*;
 use crate::constants::{COVENANT_SEED, GUARDIAN_SEED, VAULT_SEED};
@@ -49,8 +54,6 @@ pub fn handler(ctx: Context<ExecuteCovenant>) -> Result<()> {
         LegacyError::CovenantVaultMismatch
     );
 
-    // Executing a BeneficiaryChange covenant after the trigger would silently
-    // redirect the pending inheritance to an attacker-controlled wallet.
     require!(!vault.is_triggered,       LegacyError::VaultAlreadyTriggered);
     require!(!vault.is_emergency_swept,  LegacyError::VaultAlreadySwept);
 
@@ -64,9 +67,6 @@ pub fn handler(ctx: Context<ExecuteCovenant>) -> Result<()> {
         LegacyError::InsufficientSignatures
     );
 
-    // A zero signatures_complete_slot means M-of-N was never actually reached.
-    // Without this guard, clock.slot - 0 = clock.slot would always pass the
-    // timelock check, allowing instant execution of a zero-signature covenant.
     require!(
         covenant.signatures_complete_slot > 0,
         LegacyError::InsufficientSignatures
@@ -89,15 +89,18 @@ pub fn handler(ctx: Context<ExecuteCovenant>) -> Result<()> {
                 LegacyError::InvalidBeneficiary
             );
 
-            let old_beneficiary = vault.beneficiary;
-            vault.beneficiary   = covenant.target;
+            let old_beneficiary_utxo_pubkey = vault.beneficiary_utxo_pubkey;
+            // Store the new beneficiary's UTXO pubkey bytes.
+            // The covenant target encodes the 32-byte UTXO pubkey as a Pubkey
+            // for IDL compatibility — the bytes are identical.
+            vault.beneficiary_utxo_pubkey = covenant.target.to_bytes();
 
             emit!(BeneficiaryChanged {
-                vault:           vault.key(),
-                old_beneficiary,
-                new_beneficiary: covenant.target,
-                covenant:        covenant.key(),
-                executed_slot:   clock.slot,
+                vault:                       vault.key(),
+                old_beneficiary_utxo_pubkey,
+                new_beneficiary_utxo_pubkey: vault.beneficiary_utxo_pubkey,
+                covenant:                    covenant.key(),
+                executed_slot:               clock.slot,
             });
         }
 
@@ -151,8 +154,6 @@ pub fn handler(ctx: Context<ExecuteCovenant>) -> Result<()> {
         }
 
         CovenantType::EmergencySweep => {
-            // Blocked by the require above. The explicit return arm survives
-            // future refactoring that might remove the require guard.
             return err!(LegacyError::CovenantTypeMismatch);
         }
     }
@@ -164,11 +165,11 @@ pub fn handler(ctx: Context<ExecuteCovenant>) -> Result<()> {
 
 #[event]
 pub struct BeneficiaryChanged {
-    pub vault:           Pubkey,
-    pub old_beneficiary: Pubkey,
-    pub new_beneficiary: Pubkey,
-    pub covenant:        Pubkey,
-    pub executed_slot:   u64,
+    pub vault:                       Pubkey,
+    pub old_beneficiary_utxo_pubkey: [u8; 32],
+    pub new_beneficiary_utxo_pubkey: [u8; 32],
+    pub covenant:                    Pubkey,
+    pub executed_slot:               u64,
 }
 
 #[event]

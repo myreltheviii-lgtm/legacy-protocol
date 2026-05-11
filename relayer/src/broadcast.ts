@@ -28,6 +28,12 @@
 //   (a) The event has no signature field (development / single-process mode).
 //   (b) TRUSTED_TRIGGER_SIGNER_PUBKEY is not configured (relayer opt-out).
 // In both cases a warning is logged so operators know verification is inactive.
+//
+// TRUSTED_TRIGGER_SIGNER_PUBKEY validation: the configured pubkey is validated
+// as a well-formed base58 Solana public key at module initialisation. An invalid
+// value throws immediately so the process exits with a clear error rather than
+// silently rejecting all signed events (a subtle misconfiguration that would
+// prevent inheritance triggers from ever being submitted).
 
 import {
   Connection,
@@ -74,6 +80,20 @@ const VAULT_SEED = Buffer.from("vault");
 const TRUSTED_PUBKEY_B58 = process.env["TRUSTED_TRIGGER_SIGNER_PUBKEY"];
 
 if (TRUSTED_PUBKEY_B58) {
+  // Validate the configured pubkey is a well-formed base58 Solana public key.
+  // An invalid value would cause every signed event to be silently rejected
+  // (the string comparison would never match), preventing all trigger
+  // inheritance submissions without any indication of misconfiguration.
+  // Throwing here ensures the process exits with a clear error at startup.
+  try {
+    new PublicKey(TRUSTED_PUBKEY_B58);
+  } catch (err) {
+    throw new Error(
+      `TRUSTED_TRIGGER_SIGNER_PUBKEY is set but is not a valid base58 Solana public key: ` +
+      `"${TRUSTED_PUBKEY_B58}". Fix the environment variable and restart the relayer. ` +
+      `Original error: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
   logger.info(
     { pubkey: TRUSTED_PUBKEY_B58 },
     "Trigger signal signature verification enabled",

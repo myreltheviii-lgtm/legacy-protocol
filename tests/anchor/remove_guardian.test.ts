@@ -5,7 +5,7 @@ import { Keypair, PublicKey, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web
 import { LegacyVault }       from "../../target/types/legacy_vault";
 import IDL                   from "../../target/idl/legacy_vault.json";
 
-const PROGRAM_ID    = new PublicKey("LGCYvau1tXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+const PROGRAM_ID    = new PublicKey("4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd");
 const VAULT_SEED    = Buffer.from("vault");
 const ACTIVITY_SEED = Buffer.from("activity");
 const GUARDIAN_SEED = Buffer.from("guardian");
@@ -22,11 +22,13 @@ function deriveGuardianPda(vaultPda: PublicKey, guardian: PublicKey): [PublicKey
   return PublicKey.findProgramAddressSync([GUARDIAN_SEED, vaultPda.toBuffer(), guardian.toBuffer()], PROGRAM_ID);
 }
 
+// A non-zero 32-byte Cloak UTXO pubkey for the beneficiary identity (v2 arg, not account).
+const BENEFICIARY_UTXO_PUBKEY = Array.from({ length: 32 }, (_, i) => i + 1);
+
 describe("remove_guardian", () => {
   let context:    ProgramTestContext;
   let program:    Program<LegacyVault>;
   let owner:      Keypair;
-  let beneficiary: Keypair;
   let vaultPda:   PublicKey;
   let g1:         Keypair;
   let g2:         Keypair;
@@ -37,16 +39,17 @@ describe("remove_guardian", () => {
     context  = await startAnchor(".", [{ name: "legacy_vault", programId: PROGRAM_ID }], []);
     const provider = new BankrunProvider(context);
     program  = new Program<LegacyVault>(IDL as any, PROGRAM_ID, provider);
-    owner       = Keypair.generate();
-    beneficiary = Keypair.generate();
+    owner    = Keypair.generate();
     context.setAccount(owner.publicKey, { lamports: 10 * LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
 
     [vaultPda]          = deriveVaultPda(owner.publicKey, new BN(0));
     const [activityPda] = deriveActivityPda(vaultPda);
 
+    // v2 API: initializeVault(vaultIndex, inactivityThresholdSlots, beneficiaryUtxoPubkey).
+    // No beneficiary account — removed in v2.
     await program.methods
-      .initializeVault(new BN(0), new BN(5_000_000))
-      .accounts({ owner: owner.publicKey, beneficiary: beneficiary.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId })
+      .initializeVault(new BN(0), new BN(5_000_000), BENEFICIARY_UTXO_PUBKEY)
+      .accounts({ owner: owner.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId })
       .signers([owner])
       .rpc();
 
@@ -103,7 +106,7 @@ describe("remove_guardian", () => {
     const ga1 = await program.account.guardianAccount.fetch(gPda1);
     const requestedSlot = BigInt(ga1.removalRequestedSlot.toString());
 
-    // Warp past timelock
+    // Warp past the 216_000 slot timelock
     context.warpToSlot(requestedSlot + GUARDIAN_REMOVAL_TIMELOCK + 1n);
 
     // Phase 2
@@ -120,18 +123,11 @@ describe("remove_guardian", () => {
     expect(guardianPdaInfo).toBeNull();
   });
 
-  it("No pending removal: NoRemovalPending (calling Phase 2 on guardian with no pending request fails)", async () => {
-    // Don't call Phase 1, try Phase 2 directly with another mechanism.
-    // Since removal_requested_slot starts at 0, Phase 2 routes to Phase 1 first.
-    // After Phase 1, immediate Phase 2 should give RemovalTimelockActive.
-    // For a fresh guardian with no Phase 1: the code routes to Phase 1 (sets slot).
-    // NoRemovalPending is thrown in a different codepath in original — actually looking
-    // at the code, there's no NoRemovalPending error in the remove_guardian instruction;
-    // it's handled by phase routing. The spec says "NoRemovalPending" — checking the
-    // error codes: 6015 = NoRemovalPending. But the remove_guardian handler doesn't use it.
-    // We test that calling twice consecutively produces RemovalTimelockActive as a proxy.
+  it("No pending removal: calling Phase 2 on guardian with no Phase 1 routes to Phase 1, then RemovalTimelockActive on immediate retry", async () => {
+    // First call with no pending removal routes to Phase 1 (sets removal_requested_slot)
     await program.methods.removeGuardian().accounts({ owner: owner.publicKey, vault: vaultPda, guardian: g1.publicKey, guardianAccount: gPda1 }).signers([owner]).rpc();
 
+    // Immediate second call hits RemovalTimelockActive (timelock not elapsed)
     await expect(
       program.methods.removeGuardian().accounts({ owner: owner.publicKey, vault: vaultPda, guardian: g1.publicKey, guardianAccount: gPda1 }).signers([owner]).rpc(),
     ).rejects.toThrow(/RemovalTimelockActive/);
@@ -157,11 +153,9 @@ describe("remove_guardian", () => {
     context.warpToSlot(BigInt(ga2.removalRequestedSlot.toString()) + GUARDIAN_REMOVAL_TIMELOCK + 1n);
     await program.methods.removeGuardian().accounts({ owner: owner.publicKey, vault: vaultPda, guardian: g2.publicKey, guardianAccount: gPda2 }).signers([owner]).rpc();
 
-    // Now only g1 remains with guardian_count=1. Trying to remove g1 (Phase 1) should fail
+    // Now only g1 remains with guardian_count=1. Trying to remove g1 should fail
     await expect(
       program.methods.removeGuardian().accounts({ owner: owner.publicKey, vault: vaultPda, guardian: g1.publicKey, guardianAccount: gPda1 }).signers([owner]).rpc(),
     ).rejects.toThrow(/ThresholdTooSmall/);
   });
 });
-```
-

@@ -1,14 +1,11 @@
 // watcher/src/types/legacy_vault.ts
 //
-// The Anchor IDL type for the Legacy Vault program. This file is generated
-// by `anchor build` and placed in `target/types/legacy_vault.ts`. It is
-// copied here so the watcher service can import it without depending on the
-// build output directory.
-//
-// IMPORTANT: If the on-chain program's instruction signatures or account
-// layouts change, regenerate this file by running `anchor build` and copying
-// the updated type from `target/types/legacy_vault.ts`. A stale IDL type
-// will cause silent deserialization failures at runtime.
+// Anchor IDL type for the Legacy Vault program (v2 — Cloak integration).
+// Updated from the pre-Cloak IDL to include:
+//   - record_cloak_deposit instruction (new)
+//   - record_cloak_claim instruction (new)
+//   - initialize_vault now takes beneficiary_utxo_pubkey bytes instead of a Pubkey account
+//   - VaultAccount now has beneficiary_utxo_pubkey, utxo_commitment, utxo_leaf_index fields
 
 export type LegacyVault = {
   version: "0.1.0";
@@ -19,7 +16,6 @@ export type LegacyVault = {
       name:     "initializeVault";
       accounts: [
         { name: "owner";          isMut: true;  isSigner: true  },
-        { name: "beneficiary";    isMut: false; isSigner: false },
         { name: "vault";          isMut: true;  isSigner: false },
         { name: "activity";       isMut: true;  isSigner: false },
         { name: "systemProgram";  isMut: false; isSigner: false },
@@ -27,6 +23,7 @@ export type LegacyVault = {
       args: [
         { name: "vaultIndex";               type: "u64" },
         { name: "inactivityThresholdSlots"; type: "u64" },
+        { name: "beneficiaryUtxoPubkey";    type: { array: ["u8", 32] } },
       ];
     },
     {
@@ -107,9 +104,6 @@ export type LegacyVault = {
         { name: "caller";         isMut: true;  isSigner: true             },
         { name: "vault";          isMut: true;  isSigner: false            },
         { name: "covenant";       isMut: true;  isSigner: false            },
-        // Optional — present only for GuardianRemoval covenants. The Rust
-        // Accounts struct declares this as Option<Account<GuardianAccount>>,
-        // so it may be omitted entirely for BeneficiaryChange covenants.
         { name: "targetGuardian"; isMut: true;  isSigner: false; isOptional: true },
       ];
       args: [];
@@ -134,12 +128,6 @@ export type LegacyVault = {
       args: [];
     },
     {
-      // trigger_inheritance has exactly TWO accounts: caller and vault.
-      // The Rust TriggerInheritance struct does NOT include an activity account.
-      // Earlier versions of this IDL incorrectly listed activity as a third
-      // account, which caused Anchor's TypeScript client to fail client-side
-      // validation on every trigger_inheritance call — the relayer could never
-      // submit the transaction that flips vault.is_triggered = true.
       name:     "triggerInheritance";
       accounts: [
         { name: "caller"; isMut: true; isSigner: true  },
@@ -178,6 +166,32 @@ export type LegacyVault = {
       ];
       args: [];
     },
+    {
+      // NEW — Cloak integration
+      name:     "recordCloakDeposit";
+      accounts: [
+        { name: "owner"; isMut: true; isSigner: true  },
+        { name: "vault"; isMut: true; isSigner: false },
+      ];
+      args: [
+        { name: "utxoCommitment";   type: { array: ["u8", 32] } },
+        { name: "utxoLeafIndex";    type: "u64" },
+        { name: "shieldedLamports"; type: "u64" },
+      ];
+    },
+    {
+      // NEW — Cloak integration (permissionless)
+      name:     "recordCloakClaim";
+      accounts: [
+        { name: "caller";        isMut: true; isSigner: true  },
+        { name: "vault";         isMut: true; isSigner: false },
+        { name: "activity";      isMut: true; isSigner: false },
+        { name: "systemProgram"; isMut: false; isSigner: false },
+      ];
+      args: [
+        { name: "cloakTransferSignature"; type: { array: ["u8", 64] } },
+      ];
+    },
   ];
 
   accounts: [
@@ -186,22 +200,24 @@ export type LegacyVault = {
       type: {
         kind: "struct";
         fields: [
-          { name: "owner";                    type: "publicKey" },
-          { name: "beneficiary";              type: "publicKey" },
-          { name: "guardianCount";            type: "u8"        },
-          { name: "mOfNThreshold";            type: "u8"        },
-          { name: "inactivityThresholdSlots"; type: "u64"       },
-          { name: "lastCheckInSlot";          type: "u64"       },
-          { name: "createdSlot";              type: "u64"       },
-          { name: "depositedLamports";        type: "u64"       },
-          { name: "covenantCounter";          type: "u64"       },
-          { name: "vaultIndex";               type: "u64"       },
-          { name: "isTriggered";              type: "bool"      },
-          { name: "isClaimed";                type: "bool"      },
-          { name: "isEmergencySwept";         type: "bool"      },
-          { name: "warning75Sent";            type: "bool"      },
-          { name: "warning90Sent";            type: "bool"      },
-          { name: "bump";                     type: "u8"        },
+          { name: "owner";                    type: "publicKey"              },
+          { name: "beneficiaryUtxoPubkey";    type: { array: ["u8", 32] }   },
+          { name: "guardianCount";            type: "u8"                     },
+          { name: "mOfNThreshold";            type: "u8"                     },
+          { name: "inactivityThresholdSlots"; type: "u64"                    },
+          { name: "lastCheckInSlot";          type: "u64"                    },
+          { name: "createdSlot";              type: "u64"                    },
+          { name: "depositedLamports";        type: "u64"                    },
+          { name: "covenantCounter";          type: "u64"                    },
+          { name: "vaultIndex";               type: "u64"                    },
+          { name: "utxoCommitment";           type: { array: ["u8", 32] }   },
+          { name: "utxoLeafIndex";            type: "u64"                    },
+          { name: "isTriggered";              type: "bool"                   },
+          { name: "isClaimed";                type: "bool"                   },
+          { name: "isEmergencySwept";         type: "bool"                   },
+          { name: "warning75Sent";            type: "bool"                   },
+          { name: "warning90Sent";            type: "bool"                   },
+          { name: "bump";                     type: "u8"                     },
         ];
       };
     },
@@ -269,11 +285,6 @@ export type LegacyVault = {
     },
   ];
 
-  // All 30 error codes from errors.rs in declaration order.
-  // Anchor assigns codes starting at 6000; each variant index maps to
-  // 6000 + index. GuardiansStillRegistered is variant 12 (code 6012),
-  // which was previously missing, causing every subsequent code to be
-  // off by one and the last five codes to be absent entirely.
   errors: [
     { code: 6000; name: "UnauthorisedOwner"            },
     { code: 6001; name: "UnauthorisedGuardian"          },

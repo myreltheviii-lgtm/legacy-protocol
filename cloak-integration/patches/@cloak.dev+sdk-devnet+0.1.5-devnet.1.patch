@@ -1,0 +1,13 @@
+diff --git a/node_modules/@cloak.dev/sdk-devnet/dist/index.cjs b/node_modules/@cloak.dev/sdk-devnet/dist/index.cjs
+index 75be7a0..d73d470 100644
+--- a/node_modules/@cloak.dev/sdk-devnet/dist/index.cjs
++++ b/node_modules/@cloak.dev/sdk-devnet/dist/index.cjs
+@@ -4342,7 +4342,7 @@ async function submitTransactionDirect(connection, programId, depositor, proofBy
+   }
+   const publicAmountBytes = publicInputsBytes.slice(32, 40);
+   const publicAmountBuffer = Buffer.from(publicAmountBytes);
+-  const publicAmount = publicAmountBuffer.readBigInt64LE(0);
++  const publicAmount = (() => { const b = publicAmountBuffer; const val = b[0] | (b[1]<<8) | (b[2]<<16) | (b[3]<<24); const hi = b[4] | (b[5]<<8) | (b[6]<<16) | (b[7]<<24); return BigInt.asIntN(64, (BigInt(hi >>> 0) << 32n) | BigInt(val >>> 0)); })();
+   const depositAmount = publicAmount > BigInt(0) ? publicAmount : BigInt(0);
+   const withdrawAmount = publicAmount < BigInt(0) ? -publicAmount : BigInt(0);
+   const preTransactInstructions = [];

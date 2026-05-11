@@ -92,7 +92,7 @@ describe("watcher db/store", () => {
     store.registerVault(vault);
     const fetched = store.getVault(vault.vaultAddress);
     expect(fetched!.depositedLamports).toBe("18446744073709551615");
-    // Verify it can be parsed as BigInt
+    // Verify it can be parsed as BigInt without precision loss
     expect(BigInt(fetched!.depositedLamports)).toBe(18446744073709551615n);
   });
 
@@ -153,6 +153,27 @@ describe("watcher db/store", () => {
     expect(active[0].vaultAddress).toBe(v2.vaultAddress);
   });
 
+  it("getAllActiveVaults returns empty array when no vaults are registered", () => {
+    // Authoritative Layer H coverage: getAllActiveVaults with zero vaults must return [].
+    const active = store.getAllActiveVaults();
+    expect(active).toEqual([]);
+    expect(active.length).toBe(0);
+  });
+
+  it("getAllActiveVaults returns empty array after all vaults deactivated", () => {
+    const v1 = makeVaultRecord({ vaultAddress: "Vault1111111111111111111111111111111111111" });
+    const v2 = makeVaultRecord({ vaultAddress: "Vault2222222222222222222222222222222222222" });
+    store.registerVault(v1);
+    store.registerVault(v2);
+
+    store.deactivateVault(v1.vaultAddress);
+    store.deactivateVault(v2.vaultAddress);
+
+    const active = store.getAllActiveVaults();
+    expect(active.length).toBe(0);
+    expect(active).toEqual([]);
+  });
+
   it("setWarning75Sent and setWarning90Sent update correctly", () => {
     const vault = makeVaultRecord();
     store.registerVault(vault);
@@ -204,6 +225,8 @@ describe("watcher db/store", () => {
     store.deactivateVault("A" + "1".repeat(43));
     expect(store.countActiveVaults()).toBe(2);
   });
-});
-```
 
+  it("countActiveVaults returns 0 when store is empty", () => {
+    expect(store.countActiveVaults()).toBe(0);
+  });
+});

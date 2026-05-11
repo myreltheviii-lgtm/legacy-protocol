@@ -5,7 +5,7 @@ import { Keypair, PublicKey, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web
 import { LegacyVault }       from "../../target/types/legacy_vault";
 import IDL                   from "../../target/idl/legacy_vault.json";
 
-const PROGRAM_ID    = new PublicKey("LGCYvau1tXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+const PROGRAM_ID    = new PublicKey("4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd");
 const VAULT_SEED    = Buffer.from("vault");
 const ACTIVITY_SEED = Buffer.from("activity");
 const GUARDIAN_SEED = Buffer.from("guardian");
@@ -26,6 +26,9 @@ describe("integration: full vault lifecycle", () => {
   let program:    Program<LegacyVault>;
   let owner:      Keypair;
   let beneficiary: Keypair;
+  // In v2 the beneficiary is identified by raw pubkey bytes stored in vault.beneficiaryUtxoPubkey.
+  // Using the beneficiary's Solana pubkey bytes lets claim_inheritance verify the signer.
+  let beneficiaryUtxoPubkey: number[];
   let caller:     Keypair;
 
   beforeEach(async () => {
@@ -35,6 +38,7 @@ describe("integration: full vault lifecycle", () => {
     owner       = Keypair.generate();
     beneficiary = Keypair.generate();
     caller      = Keypair.generate();
+    beneficiaryUtxoPubkey = Array.from(beneficiary.publicKey.toBytes());
 
     for (const kp of [owner, caller]) {
       context.setAccount(kp.publicKey, { lamports: 20 * LAMPORTS_PER_SOL, data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false });
@@ -46,10 +50,10 @@ describe("integration: full vault lifecycle", () => {
     const [vaultPda]    = deriveVaultPda(owner.publicKey, new BN(0));
     const [activityPda] = deriveActivityPda(vaultPda);
 
-    // 1. Initialize
+    // 1. Initialize — v2 API: no beneficiary account, UTXO pubkey as arg
     await program.methods
-      .initializeVault(new BN(0), new BN(5_000_000))
-      .accounts({ owner: owner.publicKey, beneficiary: beneficiary.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId })
+      .initializeVault(new BN(0), new BN(5_000_000), beneficiaryUtxoPubkey)
+      .accounts({ owner: owner.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId })
       .signers([owner])
       .rpc();
 
@@ -75,7 +79,7 @@ describe("integration: full vault lifecycle", () => {
       const [gPda] = deriveGuardianPda(vaultPda, guardians[i].publicKey);
       gPdas.push(gPda);
       await program.methods
-        .addGuardian(i === 2 ? 2 : 1) // set final threshold to 2-of-3
+        .addGuardian(i === 2 ? 2 : 1)
         .accounts({ owner: owner.publicKey, vault: vaultPda, guardian: guardians[i].publicKey, guardianAccount: gPda, systemProgram: SystemProgram.programId })
         .signers([owner])
         .rpc();
@@ -101,7 +105,7 @@ describe("integration: full vault lifecycle", () => {
     expect(activity.checkinCount.toNumber()).toBe(3);
     expect(BigInt(activity.sumOfIntervals.toString())).toBeGreaterThan(0n);
 
-    // 5. Warp past threshold and trigger
+    // 5. Warp past threshold and trigger — only caller + vault accounts
     const v2 = await program.account.vaultAccount.fetch(vaultPda);
     const triggerSlot = BigInt(v2.lastCheckInSlot.toString()) + BigInt(v2.inactivityThresholdSlots.toString());
     context.warpToSlot(triggerSlot);
@@ -127,15 +131,12 @@ describe("integration: full vault lifecycle", () => {
       .signers([beneficiary])
       .rpc();
 
-    // Verify all PDAs closed
     expect(await context.banksClient.getAccount(vaultPda)).toBeNull();
     expect(await context.banksClient.getAccount(activityPda)).toBeNull();
 
-    // Verify beneficiary received all lamports (deposited + rent)
     const benAfter = BigInt((await context.banksClient.getAccount(beneficiary.publicKey))!.lamports);
     const received = benAfter - benBefore;
     expect(received).toBeGreaterThan(expectedTotal - 10_000n);
-    // At least 2 SOL deposited
     expect(received).toBeGreaterThanOrEqual(BigInt(2 * LAMPORTS_PER_SOL) - 10_000n);
   });
 
@@ -144,17 +145,13 @@ describe("integration: full vault lifecycle", () => {
     const [activityPda] = deriveActivityPda(vaultPda);
 
     await program.methods
-      .initializeVault(new BN(1), new BN(5_000_000))
-      .accounts({ owner: owner.publicKey, beneficiary: beneficiary.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId })
+      .initializeVault(new BN(1), new BN(5_000_000), beneficiaryUtxoPubkey)
+      .accounts({ owner: owner.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId })
       .signers([owner])
       .rpc();
 
     const depositAmount = 3 * LAMPORTS_PER_SOL;
-    await program.methods
-      .deposit(new BN(depositAmount))
-      .accounts({ owner: owner.publicKey, vault: vaultPda, systemProgram: SystemProgram.programId })
-      .signers([owner])
-      .rpc();
+    await program.methods.deposit(new BN(depositAmount)).accounts({ owner: owner.publicKey, vault: vaultPda, systemProgram: SystemProgram.programId }).signers([owner]).rpc();
 
     const vaultInfo     = await context.banksClient.getAccount(vaultPda);
     const activityInfo  = await context.banksClient.getAccount(activityPda);
@@ -163,6 +160,7 @@ describe("integration: full vault lifecycle", () => {
     const v0 = await program.account.vaultAccount.fetch(vaultPda);
     context.warpToSlot(BigInt(v0.lastCheckInSlot.toString()) + BigInt(v0.inactivityThresholdSlots.toString()));
 
+    // trigger_inheritance: only caller + vault accounts
     await program.methods.triggerInheritance().accounts({ caller: caller.publicKey, vault: vaultPda }).signers([caller]).rpc();
 
     const benBefore = BigInt((await context.banksClient.getAccount(beneficiary.publicKey))!.lamports);
@@ -170,7 +168,6 @@ describe("integration: full vault lifecycle", () => {
     const benAfter = BigInt((await context.banksClient.getAccount(beneficiary.publicKey))!.lamports);
 
     const received = benAfter - benBefore;
-    // Beneficiary should receive all lamports from both PDAs minus minimal tx fee
     expect(received).toBeGreaterThan(totalOnChain - 10_000n);
     expect(received).toBeGreaterThanOrEqual(BigInt(depositAmount) - 10_000n);
   });
@@ -179,10 +176,11 @@ describe("integration: full vault lifecycle", () => {
     const [vaultPda]    = deriveVaultPda(owner.publicKey, new BN(2));
     const [activityPda] = deriveActivityPda(vaultPda);
 
-    await program.methods.initializeVault(new BN(2), new BN(5_000_000)).accounts({ owner: owner.publicKey, beneficiary: beneficiary.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId }).signers([owner]).rpc();
+    await program.methods.initializeVault(new BN(2), new BN(5_000_000), beneficiaryUtxoPubkey).accounts({ owner: owner.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId }).signers([owner]).rpc();
 
     const v0 = await program.account.vaultAccount.fetch(vaultPda);
     context.warpToSlot(BigInt(v0.lastCheckInSlot.toString()) + BigInt(v0.inactivityThresholdSlots.toString()));
+    // trigger_inheritance: only caller + vault accounts
     await program.methods.triggerInheritance().accounts({ caller: caller.publicKey, vault: vaultPda }).signers([caller]).rpc();
     await program.methods.claimInheritance().accounts({ beneficiary: beneficiary.publicKey, vault: vaultPda, activity: activityPda, systemProgram: SystemProgram.programId }).signers([beneficiary]).rpc();
 

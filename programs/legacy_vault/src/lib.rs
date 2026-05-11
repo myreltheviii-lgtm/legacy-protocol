@@ -8,16 +8,15 @@
 // routes — it contains no business logic, making each instruction independently
 // auditable.
 //
-// Panic-freedom invariant (Level 4):
+// Cloak integration (v2):
+//   Two new instructions: record_cloak_deposit, record_cloak_claim.
+//   initialize_vault now takes beneficiary_utxo_pubkey: [u8;32] instead of
+//   a beneficiary account. See instructions/initialize_vault.rs for details.
+//
+// Panic-freedom invariant:
 //   Every instruction handler in this program is statically panic-free. All
-//   fallible operations use checked arithmetic (checked_add, checked_sub,
-//   checked_mul, checked_div) and propagate LegacyError::MathOverflow on
-//   overflow — they never panic. The only unwrap/expect calls are on
-//   Clock::get() and bump lookups in account constraint contexts, both of
-//   which are infallible in the BPF runtime. This invariant must be maintained
-//   on every future change: no unwrap(), no expect(), no panic!(), no
-//   unreachable!() (the existing match arms in execute_covenant use
-//   return err!() instead of unreachable!() for exactly this reason).
+//   fallible operations use checked arithmetic and propagate LegacyError on
+//   overflow. No unwrap(), no expect(), no panic!(), no unreachable!().
 
 use anchor_lang::prelude::*;
 
@@ -30,8 +29,7 @@ pub mod state;
 use instructions::*;
 use state::CovenantType;
 
-// Replace this with the output of `anchor build` on first compile.
-declare_id!("7h9BH7d9aHGuPubFc6s9GCYDwtWrFNGB8kKKKV8YaSAe");
+declare_id!("CcnYCu1EEfKD9eBZndxPCorESfJatFdxP15EaAKksPEr");
 
 #[program]
 pub mod legacy_vault {
@@ -42,12 +40,15 @@ pub mod legacy_vault {
     /// Creates a new VaultAccount and ActivityAccount for the caller.
     /// `vault_index` allows one owner to maintain multiple vaults.
     /// `inactivity_threshold_slots` defaults to the protocol minimum if 0.
+    /// `beneficiary_utxo_pubkey` is the 32-byte Cloak UTXO public key of the
+    /// intended beneficiary (generated client-side via generateUtxoKeypair()).
     pub fn initialize_vault(
         ctx: Context<InitializeVault>,
         vault_index: u64,
         inactivity_threshold_slots: u64,
+        beneficiary_utxo_pubkey: [u8; 32],
     ) -> Result<()> {
-        initialize_vault::handler(ctx, vault_index, inactivity_threshold_slots)
+        initialize_vault::handler(ctx, vault_index, inactivity_threshold_slots, beneficiary_utxo_pubkey)
     }
 
     /// Updates the inactivity threshold on an existing vault.
@@ -60,6 +61,7 @@ pub mod legacy_vault {
     }
 
     /// Transfers lamports from the owner into the vault PDA.
+    /// For Cloak-shielded vaults, use record_cloak_deposit instead.
     pub fn deposit(ctx: Context<Deposit>, lamports: u64) -> Result<()> {
         deposit::handler(ctx, lamports)
     }
@@ -82,7 +84,6 @@ pub mod legacy_vault {
 
     /// Phase 1: initiates the removal timelock for a guardian.
     /// Phase 2: finalises the removal after the timelock has elapsed.
-    /// Calling this instruction twice (once per phase) is intentional.
     pub fn remove_guardian(ctx: Context<RemoveGuardian>) -> Result<()> {
         remove_guardian::handler(ctx)
     }
@@ -119,8 +120,7 @@ pub mod legacy_vault {
     }
 
     /// Any active guardian may call this when the owner's silence exceeds the
-    /// statistically expected interval. Emits an on-chain signal without
-    /// triggering inheritance.
+    /// statistically expected interval.
     pub fn anomaly_flag(ctx: Context<AnomalyFlag>) -> Result<()> {
         anomaly_flag::handler(ctx)
     }
@@ -133,16 +133,14 @@ pub mod legacy_vault {
         trigger_inheritance::handler(ctx)
     }
 
-    /// The beneficiary calls this after the vault is triggered to receive all
-    /// lamports. Closes the activity account simultaneously.
+    /// Non-shielded vaults: the beneficiary calls this to receive all lamports.
+    /// For shielded vaults, use guardians + record_cloak_claim instead.
     pub fn claim_inheritance(ctx: Context<ClaimInheritance>) -> Result<()> {
         claim_inheritance::handler(ctx)
     }
 
-    // ── Emergency ─────────────────────────────────────────────────────────────
-
-    /// Executes an approved EmergencySweep covenant. Transfers all vault
-    /// lamports to the beneficiary immediately.
+    /// Executes an approved EmergencySweep covenant. Non-shielded vaults only.
+    /// For shielded vaults, guardians must use the off-chain Cloak transfer.
     pub fn emergency_sweep(ctx: Context<EmergencySweep>) -> Result<()> {
         emergency_sweep::handler(ctx)
     }
@@ -153,5 +151,29 @@ pub mod legacy_vault {
     /// unexecutable when the vault was triggered.
     pub fn close_orphaned_covenant(ctx: Context<CloseOrphanedCovenant>) -> Result<()> {
         close_orphaned_covenant::handler(ctx)
+    }
+
+    // ── Cloak integration ─────────────────────────────────────────────────────
+
+    /// Records an off-chain Cloak shielded deposit. The owner calls this after
+    /// successfully calling `transact()` in the Cloak SDK. No SOL moves through
+    /// this instruction — it only records the UTXO commitment for guardian use.
+    pub fn record_cloak_deposit(
+        ctx: Context<RecordCloakDeposit>,
+        utxo_commitment:   [u8; 32],
+        utxo_leaf_index:   u64,
+        shielded_lamports: u64,
+    ) -> Result<()> {
+        record_cloak_deposit::handler(ctx, utxo_commitment, utxo_leaf_index, shielded_lamports)
+    }
+
+    /// Permissionless. Closes Anchor accounts after guardians have completed
+    /// the off-chain Cloak shield-to-shield inheritance transfer.
+    /// The caller receives vault + activity rent as a submission incentive.
+    pub fn record_cloak_claim(
+        ctx: Context<RecordCloakClaim>,
+        cloak_transfer_signature: [u8; 64],
+    ) -> Result<()> {
+        record_cloak_claim::handler(ctx, cloak_transfer_signature)
     }
 }

@@ -1,24 +1,3 @@
-// app/src/components/VaultDashboard.tsx
-//
-// Owner's full vault management interface.
-//
-// Level 2 optimistic updates: each action immediately reflects predicted
-// state in the UI (e.g., the check-in timer resets, the deposit balance
-// increases) before the confirmation round-trip completes. On error the
-// optimistic patch is reverted. On success onRefresh() reconciles with
-// on-chain truth so the UI converges to the real state.
-//
-// Level 4 addition: ShamirDistributor panel for in-browser secret splitting
-// and guardian share distribution. Visible to the vault owner only, behind
-// a "Guardian Share Setup" expandable section so it doesn't clutter the
-// main dashboard for users who don't need it.
-//
-// Bug fix: threshold input min attribute corrected from 2 to 3 days.
-// MIN_INACTIVITY_THRESHOLD_SLOTS = 432,000 slots ÷ 2 slots/sec ÷ 86,400
-// sec/day = 2.5 days. With step="1" (whole days), 3 is the smallest integer
-// ≥ 2.5 days that passes on-chain validation. The previous min="2" allowed
-// the user to enter a value that would be silently rejected by the program.
-
 "use client";
 
 import React, { useState, useCallback } from "react";
@@ -46,11 +25,12 @@ import {
   shortAddress,
   zoneLabel,
   zoneTailwindText,
-  explorerTxUrl,
 } from "@/lib/format";
-import { InactivityRing }      from "./InactivityRing";
-import { GuardianManager }     from "./GuardianManager";
-import { ShamirDistributor }   from "./ShamirDistributor";
+import { InactivityRing }    from "./InactivityRing";
+import { GuardianManager }   from "./GuardianManager";
+import { ShamirDistributor } from "./ShamirDistributor";
+import { CheckInHistory }    from "./CheckInHistory";
+import { useToast }          from "@/components/ToastProvider";
 import type { GuardianWithAddress } from "@/hooks/useGuardians";
 
 interface VaultDashboardProps {
@@ -68,6 +48,7 @@ export function VaultDashboard({
 }: VaultDashboardProps) {
   const { publicKey, signTransaction } = useWallet();
   const { connection } = useConnection();
+  const { addToast } = useToast();
 
   const [depositAmount, setDepositAmount] = useState("");
   const [newThreshold,  setNewThreshold]  = useState("");
@@ -79,14 +60,11 @@ export function VaultDashboard({
   const [optimisticVault,      setOptimisticVault]      = useState<Partial<VaultAccount> | null>(null);
   const [optimisticInactivity, setOptimisticInactivity] = useState<VaultInactivityState | null>(null);
 
-  const [lastTx,   setLastTx]   = useState<string | null>(null);
-  const [txError,  setTxError]  = useState<string | null>(null);
-
   const [shamirOpen, setShamirOpen] = useState(false);
 
   const isOwner = publicKey?.toBase58() === vault.owner;
 
-  const displayVault:      VaultAccount          = optimisticVault      ? { ...vault, ...optimisticVault }      : vault;
+  const displayVault:      VaultAccount               = optimisticVault      ? { ...vault, ...optimisticVault }      : vault;
   const displayInactivity: VaultInactivityState | null = optimisticInactivity ?? inactivity;
 
   function clearOptimistic() {
@@ -97,13 +75,12 @@ export function VaultDashboard({
   async function handleCheckIn() {
     if (!publicKey || !signTransaction) return;
     setCheckingIn(true);
-    setTxError(null);
 
     const optimisticSlot = currentSlot;
     const optimisticPatch: Partial<VaultAccount> = {
-      lastCheckInSlot:  optimisticSlot,
-      warning75Sent:    false,
-      warning90Sent:    false,
+      lastCheckInSlot: optimisticSlot,
+      warning75Sent:   false,
+      warning90Sent:   false,
     };
     setOptimisticVault(optimisticPatch);
     setOptimisticInactivity(
@@ -113,18 +90,17 @@ export function VaultDashboard({
     try {
       const vaultPk  = new PublicKey(vaultPda);
       const [actPda] = deriveActivityPda(PROGRAM_ID, vaultPk);
-
       const result = await sendAndConfirmLegacyTx(
         connection,
         { publicKey, signTransaction } as any,
         [buildCheckInIx({ programId: PROGRAM_ID, owner: publicKey, vaultPda: vaultPk, activityPda: actPda })],
       );
-      setLastTx(result.signature);
       clearOptimistic();
       await onRefresh();
+      addToast({ type: "success", title: "Check-in confirmed", txSig: result.signature, duration: 6000 });
     } catch (err) {
       clearOptimistic();
-      setTxError(err instanceof Error ? err.message : "Check-in failed");
+      addToast({ type: "error", title: "Check-in failed", message: err instanceof Error ? err.message : "Transaction failed", duration: 8000 });
     } finally {
       setCheckingIn(false);
     }
@@ -138,7 +114,6 @@ export function VaultDashboard({
     if (lamports <= 0n) return;
 
     setDepositing(true);
-    setTxError(null);
 
     const optimisticPatch: Partial<VaultAccount> = {
       depositedLamports: vault.depositedLamports + lamports,
@@ -151,13 +126,13 @@ export function VaultDashboard({
         { publicKey, signTransaction } as any,
         [buildDepositIx({ programId: PROGRAM_ID, owner: publicKey, vaultPda: new PublicKey(vaultPda), lamports })],
       );
-      setLastTx(result.signature);
       setDepositAmount("");
       clearOptimistic();
       await onRefresh();
+      addToast({ type: "success", title: "Deposit confirmed", txSig: result.signature, duration: 6000 });
     } catch (err) {
       clearOptimistic();
-      setTxError(err instanceof Error ? err.message : "Deposit failed");
+      addToast({ type: "error", title: "Deposit failed", message: err instanceof Error ? err.message : "Transaction failed", duration: 8000 });
     } finally {
       setDepositing(false);
     }
@@ -168,18 +143,19 @@ export function VaultDashboard({
     if (!publicKey || !signTransaction || !newThreshold) return;
 
     const days  = parseFloat(newThreshold);
-    // ~2 slots/second × 86,400 seconds/day
     const slots = BigInt(Math.round(days * 86400 * 2));
 
     if (slots < MIN_INACTIVITY_THRESHOLD_SLOTS || slots > MAX_INACTIVITY_THRESHOLD_SLOTS) {
-      setTxError(
-        `Threshold must be between ${formatSlotDays(MIN_INACTIVITY_THRESHOLD_SLOTS)} and ${formatSlotDays(MAX_INACTIVITY_THRESHOLD_SLOTS)}`,
-      );
+      addToast({
+        type:     "error",
+        title:    "Invalid threshold",
+        message:  `Must be between ${formatSlotDays(MIN_INACTIVITY_THRESHOLD_SLOTS)} and ${formatSlotDays(MAX_INACTIVITY_THRESHOLD_SLOTS)}`,
+        duration: 8000,
+      });
       return;
     }
 
     setConfiguring(true);
-    setTxError(null);
 
     const optimisticPatch: Partial<VaultAccount> = {
       inactivityThresholdSlots: slots,
@@ -202,13 +178,13 @@ export function VaultDashboard({
           newThresholdSlots: slots,
         })],
       );
-      setLastTx(result.signature);
       setNewThreshold("");
       clearOptimistic();
       await onRefresh();
+      addToast({ type: "success", title: "Threshold updated", txSig: result.signature, duration: 6000 });
     } catch (err) {
       clearOptimistic();
-      setTxError(err instanceof Error ? err.message : "Configure threshold failed");
+      addToast({ type: "error", title: "Configure threshold failed", message: err instanceof Error ? err.message : "Transaction failed", duration: 8000 });
     } finally {
       setConfiguring(false);
     }
@@ -220,7 +196,13 @@ export function VaultDashboard({
       {/* ── Status header ─────────────────────────────────────────────────── */}
       <div className="card flex flex-col md:flex-row items-center gap-8">
         {displayInactivity ? (
-          <InactivityRing score={displayInactivity.score} zone={displayInactivity.zone} size={200} />
+          <InactivityRing
+            score={displayInactivity.score}
+            zone={displayInactivity.zone}
+            size={200}
+            currentSlot={currentSlot}
+            triggerSlot={displayInactivity.milestones.triggerSlot}
+          />
         ) : (
           <div
             style={{ width: 200, height: 200, borderRadius: "50%", background: "rgba(255,255,255,0.04)" }}
@@ -259,6 +241,11 @@ export function VaultDashboard({
         </div>
       </div>
 
+      {/* ── Check-in Statistics — owner only ─────────────────────────────── */}
+      {isOwner && (
+        <CheckInHistory activity={activity} vault={displayVault} />
+      )}
+
       {/* ── Owner actions ──────────────────────────────────────────────────── */}
       {isOwner && !displayVault.isTriggered && !displayVault.isEmergencySwept && (
         <>
@@ -270,7 +257,7 @@ export function VaultDashboard({
             </p>
             <button
               className="btn-primary"
-              onClick={handleCheckIn}
+              onClick={() => { void handleCheckIn(); }}
               disabled={checkingIn}
               aria-label="Submit check-in transaction to reset inactivity clock"
             >
@@ -284,7 +271,7 @@ export function VaultDashboard({
             <p className="text-sm text-stone-400 mb-4">
               Add SOL to the vault. These funds will be transferred to your beneficiary when the vault is triggered.
             </p>
-            <form onSubmit={handleDeposit} className="flex gap-3" aria-label="Deposit SOL">
+            <form onSubmit={(e) => { void handleDeposit(e); }} className="flex gap-3" aria-label="Deposit SOL">
               <div className="flex-1">
                 <label htmlFor="deposit-amount" className="sr-only">Amount in SOL</label>
                 <input
@@ -314,19 +301,12 @@ export function VaultDashboard({
           <div className="card">
             <h2 className="font-display text-xl text-cream mb-1">Inactivity Threshold</h2>
             <p className="text-sm text-stone-400 mb-4">
-              Current: <span className="text-cream">{formatSlotDays(displayVault.inactivityThresholdSlots)}</span>.
-              {" "}Minimum {formatSlotDays(MIN_INACTIVITY_THRESHOLD_SLOTS)}, maximum {formatSlotDays(MAX_INACTIVITY_THRESHOLD_SLOTS)}.
+              Current: <span className="text-cream">{formatSlotDays(displayVault.inactivityThresholdSlots)}</span>.{" "}
+              Minimum {formatSlotDays(MIN_INACTIVITY_THRESHOLD_SLOTS)}, maximum {formatSlotDays(MAX_INACTIVITY_THRESHOLD_SLOTS)}.
             </p>
-            <form onSubmit={handleConfigureThreshold} className="flex gap-3" aria-label="Configure inactivity threshold">
+            <form onSubmit={(e) => { void handleConfigureThreshold(e); }} className="flex gap-3" aria-label="Configure inactivity threshold">
               <div className="flex-1">
                 <label htmlFor="threshold-days" className="sr-only">New threshold in days</label>
-                {/*
-                  min="3" because MIN_INACTIVITY_THRESHOLD_SLOTS = 432,000 slots
-                  ÷ 2 slots/sec ÷ 86,400 sec/day = 2.5 days. With step="1"
-                  (whole days), 3 is the smallest integer that meets the
-                  on-chain minimum. Entering 2 would produce 345,600 slots which
-                  is below the minimum and would be rejected by the program.
-                */}
                 <input
                   id="threshold-days"
                   type="number"
@@ -392,7 +372,7 @@ export function VaultDashboard({
         />
       )}
 
-      {/* Level 4: Shamir secret sharing for guardian key distribution */}
+      {/* Shamir secret sharing */}
       {isOwner && (
         <section aria-label="Guardian share distribution">
           <button
@@ -405,7 +385,7 @@ export function VaultDashboard({
             <div>
               <h2 className="font-display text-xl text-cream mb-0.5">Guardian Share Distribution</h2>
               <p className="text-stone-400 text-sm">
-                Split a recovery secret into M-of-N guardian shares using Shamir's Secret Sharing.
+                Split a recovery secret into M-of-N guardian shares using Shamir&apos;s Secret Sharing.
                 All computation runs in your browser.
               </p>
             </div>
@@ -417,14 +397,11 @@ export function VaultDashboard({
               ↓
             </span>
           </button>
-
           {shamirOpen && (
             <div id="shamir-panel" className="mt-4 animate-slide-up">
               <ShamirDistributor
                 vaultPda={vaultPda}
-                onShared={(threshold, numShares) => {
-                  console.info(`Shamir shares generated: ${threshold}-of-${numShares}`);
-                }}
+                onShared={(t, n) => console.info(`Shamir shares generated: ${t}-of-${n}`)}
               />
             </div>
           )}
@@ -445,7 +422,7 @@ export function VaultDashboard({
         </a>
       </div>
 
-      {/* Activity stats */}
+      {/* Activity model stats */}
       {activity && (
         <div className="card">
           <h2 className="font-display text-xl text-cream mb-4">Activity Model</h2>
@@ -458,32 +435,6 @@ export function VaultDashboard({
               valueClass={activity.anomalyFlagged ? "text-orange-400" : "text-emerald-400"}
             />
           </div>
-        </div>
-      )}
-
-      {/* Transaction feedback */}
-      {(lastTx || txError) && (
-        <div
-          role="alert"
-          aria-live="polite"
-          className="p-3 rounded-lg text-sm"
-          style={{
-            background: txError ? "rgba(239,68,68,0.1)"    : "rgba(16,185,129,0.1)",
-            color:      txError ? "var(--zone-red)"         : "var(--zone-green)",
-            border:     `1px solid ${txError ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.3)"}`,
-          }}
-        >
-          {txError ?? (
-            <a
-              href={explorerTxUrl(lastTx!)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-              aria-label="View transaction on Solana Explorer"
-            >
-              Transaction confirmed ↗
-            </a>
-          )}
         </div>
       )}
     </div>
