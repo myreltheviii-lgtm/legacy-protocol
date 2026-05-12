@@ -1,3 +1,4 @@
+import { fetch } from '@tauri-apps/plugin-http';
 // guardian-app/src/lib/sidecar-boot.ts
 //
 // Health-check utilities for the signing-service and QVAC sidecars.
@@ -11,7 +12,7 @@
 const SIGNING_SERVICE_HEALTH = 'http://127.0.0.1:7647/health';
 const QVAC_SIDECAR_HEALTH    = 'http://127.0.0.1:7648/health';
 
-const MAX_ATTEMPTS  = 40;   // 40 × 150ms = 6 seconds max
+const MAX_ATTEMPTS  = 80;   // 40 × 150ms = 6 seconds max
 const POLL_INTERVAL = 150;  // ms between attempts
 
 function sleep(ms: number): Promise<void> {

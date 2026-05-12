@@ -1,2 +1,3 @@
 #!/bin/bash
-node /workspaces/legacy-protocol/signing-service/index.js
+export PATH="$HOME/.nvm/current/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+exec node /workspaces/legacy-protocol/signing-service/index.js

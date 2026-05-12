@@ -1,3 +1,4 @@
+import { fetch } from '@tauri-apps/plugin-http';
 // guardian-app/src/lib/cloak-bridge.ts
 //
 // Typed bridge to the signing-service Bare worklet.

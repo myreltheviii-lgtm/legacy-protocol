@@ -179,6 +179,15 @@ const server = http.createServer(async (req, res) => {
   send(res, 404, { error: `Unknown endpoint: ${req.url}` });
 });
 
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.log(`[qvac-sidecar] Ready on ${HOST}:${PORT}`);
+    process.exit(0);
+  } else {
+    throw err;
+  }
+});
+
 server.listen(PORT, HOST, () => {
   console.log(`[qvac-sidecar] Ready on ${HOST}:${PORT}`);
 });

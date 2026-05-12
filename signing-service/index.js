@@ -151,6 +151,15 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.log(`[signing-service] Ready on ${HOST}:${PORT}`);
+    process.exit(0);
+  } else {
+    throw err;
+  }
+});
+
 server.listen(PORT, HOST, () => {
   console.log(`[signing-service] Ready on ${HOST}:${PORT}`);
 });
