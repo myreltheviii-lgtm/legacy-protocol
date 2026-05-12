@@ -2,14 +2,35 @@
 
 A **Solana on-chain inheritance protocol** with complete privacy via [Cloak SDK](https://cloak.dev/) integration and AI-powered risk analysis via [QVAC](https://qvac.sh/). Set an inactivity threshold — if you stop checking in, your designated beneficiary can claim your vault through a multi-guardian approval process with zero public trace.
 
+> **⚠️ Development Status**: This project is in **active development** and not yet production-ready. All releases are in **pre-release/dev mode**. The core Anchor program is stable, but the desktop application (guardian-app), QVAC integration, and some watcher features are still under active development. Expect breaking changes and API updates. Desktop support will be finalized in an upcoming release.
+
 **Live Program IDs (Mainnet)**
 - Legacy Vault: `4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd`
 - Cloak Shielded Pool: `zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW`
 
 ---
 
+## ⚡ Quick Status
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| **Anchor Program** | ✅ Stable | Ready for integration testing |
+| **TypeScript SDK** | ✅ Stable | Core APIs finalized |
+| **Cloak Integration** | ✅ Dev | Full feature set, integration testing ongoing |
+| **Watcher Service** | 🟡 Dev | Real-time monitoring works, alert delivery in progress |
+| **Relayer Service** | 🟡 Dev | Transaction submission stable, escalation features pending |
+| **QVAC Service** | 🟡 Dev | LLM inference works, RAG store being optimized |
+| **Owner Dashboard (Next.js)** | 🟡 Dev | UI complete, integration testing underway |
+| **Guardian App (Tauri)** | 🔴 Pre-Release | Desktop binary not yet released, source available for testing |
+| **Signing Service** | 🟡 Dev | Key reconstruction in progress |
+
+**Legend**: ✅ Stable | 🟡 Dev (features incomplete) | 🔴 Pre-Release (not available for download)
+
+---
+
 ## Table of Contents
 
+- [Status & Roadmap](#-quick-status)
 - [Quick Overview](#quick-overview)
 - [Architecture Overview](#architecture-overview)
 - [System Components](#system-components)
@@ -23,8 +44,46 @@ A **Solana on-chain inheritance protocol** with complete privacy via [Cloak SDK]
 - [Development](#development)
 - [Testing](#testing)
 - [Deployment](#deployment)
+- [Known Limitations](#known-limitations)
+- [Roadmap](#roadmap)
 - [Security](#security)
 - [License](#license)
+
+---
+
+## Known Limitations
+
+### Desktop Application (Guardian App)
+
+- 🔴 **No official binary release** — source code available for local build and testing only
+- 🔴 **Tauri build not finalized** — platform-specific binaries (macOS, Windows, Linux) not yet published
+- 🟡 **QVAC sidecar integration** — in-app LLM inference still being optimized for performance
+- 🟡 **Key management UI** — Shamir share distribution workflow being refined
+
+### Watcher Service
+
+- 🟡 **Geyser fallback** — RPC polling works but Geyser reconnection logic still being tested
+- 🟡 **Alert delivery** — Event buses operational, but SMS/email integrations need configuration
+- 🟡 **Database migration** — SQLite schema updates may require manual intervention in dev
+
+### Relayer Service
+
+- 🟡 **Ed25519 signature verification** — implemented but pre-flight signature checks need additional testing
+- 🟡 **Escalation webhooks** — basic structure in place, PagerDuty/Slack integration pending
+- 🟡 **Job persistence** — job map is in-memory; no recovery after restart (coming soon)
+
+### QVAC Service
+
+- 🟡 **Model download** — first startup requires ~1GB model cache download (can be slow)
+- 🟡 **RAG store optimization** — similarity search working but performance tuning ongoing
+- 🟡 **Fallback behaviors** — deterministic risk briefs in place when sidecar unavailable
+
+### Known Issues
+
+- Desktop app crashes on certain Tauri event sequences (being fixed)
+- QVAC inference latency ~2-3 seconds on first request (model load overhead)
+- Watcher Geyser reconnection may miss events during gap (< 1 second)
+- No hot-reload for guardian app configuration changes (restart required)
 
 ---
 
@@ -239,6 +298,8 @@ const proof = await generateComplianceProof({
 
 The watcher is the **off-chain monitoring service** that observes all vault states on-chain, computes inactivity scores, and drives the progressive alert pipeline. Without the watcher, no automatic notifications fire — but vaults can still be triggered manually by anyone.
 
+**Status**: 🟡 Dev — Real-time monitoring works, alert delivery integrations pending
+
 #### What the Watcher Does
 
 1. **Subscribes to Geyser gRPC stream** for real-time vault account updates
@@ -379,6 +440,8 @@ watcher_zone_distribution{zone="red"} 14
 ### 3. QVAC Service — AI Risk Analysis
 
 **QVAC** (Quantum-Safe Vector Analysis Center) is an AI risk analysis engine that generates human-readable risk briefs for guardians. It integrates **LLMs** and **vector embeddings** to analyze vault behavior and flag unusual patterns.
+
+**Status**: 🟡 Dev — LLM inference works, RAG store being optimized
 
 #### What QVAC Does
 
@@ -589,6 +652,8 @@ QVAC **only sees**:
 ### 4. Relayer Service — Permissionless Trigger
 
 The relayer is the **off-chain transaction submitter** that receives trigger signals from the watcher and reliably submits the `trigger_inheritance` instruction on-chain with retries and validation.
+
+**Status**: 🟡 Dev — Transaction submission stable, escalation features pending
 
 #### What the Relayer Does
 
@@ -1091,6 +1156,56 @@ cd qvac-sidecar
 npm install
 npm run start
 ```
+
+### Guardian App (Desktop)
+
+> ⚠️ **Desktop application is not yet ready for production**. The Tauri build is still being finalized. For now, you can build from source for local testing:
+
+```bash
+cd guardian-app
+
+# Install dependencies
+npm install
+
+# For development (hot reload)
+npm run dev
+
+# To build a local binary (may require platform-specific setup)
+npm run tauri build
+```
+
+The resulting binary will be in `src-tauri/target/release/`. Platform-specific binaries (.dmg, .msi, .deb) will be released once testing is complete.
+
+---
+
+## Roadmap
+
+### Phase 1: Core Protocol ✅ (Current)
+- [x] Anchor program (stable)
+- [x] TypeScript SDK
+- [x] Shamir secret sharing
+- [x] Watcher service (basic)
+- [x] Relayer service (basic)
+- [ ] **Finalize Cloak integration tests** (in progress)
+
+### Phase 2: Desktop & QVAC 🟡 (In Progress)
+- [ ] Guardian app Tauri build (binary release Q2 2026)
+- [ ] QVAC RAG store optimization
+- [ ] Desktop installer (macOS, Windows, Linux)
+- [ ] Model predownloading & caching
+
+### Phase 3: Production Hardening 🟡 (Upcoming)
+- [ ] Comprehensive security audit
+- [ ] Escalation webhook integrations (PagerDuty, Slack)
+- [ ] Job persistence in relayer
+- [ ] Monitoring dashboard (Grafana)
+- [ ] Operational runbooks
+
+### Phase 4: Mainnet Launch 🔴 (Future)
+- [ ] All phases complete
+- [ ] Mainnet deployment
+- [ ] Official binary releases
+- [ ] Production support
 
 ---
 
