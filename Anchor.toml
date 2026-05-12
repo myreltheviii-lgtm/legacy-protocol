@@ -3,7 +3,7 @@ seeds = true
 skip-lint = false
 
 [programs.localnet]
-legacy_vault = "CcnYCu1EEfKD9eBZndxPCorESfJatFdxP15EaAKksPEr"
+legacy_vault = "4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd"
 
 [registry]
 url = "https://api.apr.dev"
