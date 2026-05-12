@@ -1,248 +1,261 @@
 // guardian-app/src/screens/VaultDetail.tsx
 //
-// Full vault state screen. Shows all fields, all flags, zone indicator, and
-// provides navigation to the QVAC risk brief and covenant signing flow.
+// Full vault state screen. Shows all fields, all flags, zone indicator,
+// and provides navigation to the QVAC risk brief and covenant signing flow.
+// Converted from React Native to HTML/CSS for Tauri webview.
 
-import React        from "react";
-import {
-  View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView, StatusBar,
-} from "react-native";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { RiskBadge }   from "../components/RiskBadge";
-import {
-  Colors, Typography, Spacing, Radius, zoneColor,
-} from "../theme";
-import type { RootStackParamList } from "../navigation/AppNavigator";
-
-type Props = NativeStackScreenProps<RootStackParamList, "VaultDetail">;
+import { useNavigate, useLocation } from 'react-router-dom';
+import { RiskBadge }   from '../components/RiskBadge';
+import { Colors, Typography, Spacing, Radius, zoneColor } from '../theme';
+import type { VaultSummary } from '../hooks/useVaultData';
 
 const SLOTS_PER_DAY = 172_800;
 
-export function VaultDetail({ navigation, route }: Props) {
-  const { vault } = route.params;
-  const zc = zoneColor(vault.zone);
+export function VaultDetail() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const vault    = location.state?.vault as VaultSummary | undefined;
 
-  const thresholdDays = (Number(vault.inactivityThresholdSlots) / SLOTS_PER_DAY).toFixed(1);
+  if (!vault) {
+    navigate('/');
+    return null;
+  }
+
+  const zc              = zoneColor(vault.zone);
+  const thresholdDays   = (Number(vault.inactivityThresholdSlots) / SLOTS_PER_DAY).toFixed(1);
   const lastCheckInDate = new Date(
     Date.now() - vault.silenceDays * 24 * 60 * 60 * 1000,
   ).toLocaleDateString();
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.background} />
-
-      {/* Header with back nav */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Vaults</Text>
-        </TouchableOpacity>
+    <div style={styles.safe}>
+      {/* Header */}
+      <div style={styles.header}>
+        <button style={styles.backBtn} onClick={() => navigate('/')}>
+          ← Vaults
+        </button>
         <RiskBadge level={vault.zone} />
-      </View>
+      </div>
 
-      <ScrollView contentContainerStyle={styles.scroll}>
-
-        {/* Zone bar */}
-        <View style={[styles.zoneBanner, { backgroundColor: zc + "22", borderColor: zc }]}>
-          <View style={[styles.zoneDot, { backgroundColor: zc }]} />
-          <Text style={[styles.zoneText, { color: zc }]}>
+      <div style={styles.scroll}>
+        {/* Zone banner */}
+        <div style={{
+          ...styles.zoneBanner,
+          backgroundColor: zc + '22',
+          border:          `1px solid ${zc}`,
+        }}>
+          <div style={{ ...styles.zoneDot, backgroundColor: zc }} />
+          <span style={{ ...styles.zoneText, color: zc }}>
             {vault.zone} ZONE  ·  {vault.silenceDays.toFixed(1)} days silent
-          </Text>
-        </View>
+          </span>
+        </div>
 
-        {/* Address block */}
-        <View style={styles.section}>
-          <Text style={styles.label}>VAULT ADDRESS</Text>
-          <Text style={styles.mono}>{vault.vaultAddress}</Text>
-        </View>
+        {/* Addresses */}
+        <div style={styles.section}>
+          <p style={styles.label}>VAULT ADDRESS</p>
+          <p style={styles.mono}>{vault.vaultAddress}</p>
+        </div>
 
-        <View style={styles.section}>
-          <Text style={styles.label}>OWNER ADDRESS</Text>
-          <Text style={styles.mono}>{vault.ownerAddress}</Text>
-        </View>
+        <div style={styles.section}>
+          <p style={styles.label}>OWNER ADDRESS</p>
+          <p style={styles.mono}>{vault.ownerAddress}</p>
+        </div>
 
         {/* Inactivity stats */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>INACTIVITY</Text>
-          <View style={styles.row}>
-            <Stat label="Silence"     value={`${vault.silenceDays.toFixed(1)} days`} />
-            <Stat label="Avg interval" value={vault.historicalAvgDays > 0 ? `${vault.historicalAvgDays.toFixed(1)} days` : "—"} />
-            <Stat label="Threshold"   value={`${thresholdDays} days`} />
-          </View>
-          <View style={styles.row}>
+        <div style={styles.card}>
+          <p style={styles.cardTitle}>INACTIVITY</p>
+          <div style={styles.row}>
+            <Stat label="Silence"      value={`${vault.silenceDays.toFixed(1)} days`} />
+            <Stat label="Avg interval" value={vault.historicalAvgDays > 0 ? `${vault.historicalAvgDays.toFixed(1)} days` : '—'} />
+            <Stat label="Threshold"    value={`${thresholdDays} days`} />
+          </div>
+          <div style={styles.row}>
             <Stat label="Last check-in" value={lastCheckInDate} />
             <Stat label="Check-ins"     value={vault.checkinCount} />
-            <Stat label="Shielded"      value={vault.isShielded ? "Yes" : "No"} />
-          </View>
-        </View>
+            <Stat label="Shielded"      value={vault.isShielded ? 'Yes' : 'No'} />
+          </div>
+        </div>
 
         {/* Guardian config */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>GUARDIAN CONFIG</Text>
-          <View style={styles.row}>
-            <Stat label="Guardians"  value={String(vault.guardianCount)} />
-            <Stat label="Threshold"  value={`${vault.mOfNThreshold}-of-${vault.guardianCount}`} />
-          </View>
-        </View>
+        <div style={styles.card}>
+          <p style={styles.cardTitle}>GUARDIAN CONFIG</p>
+          <div style={styles.row}>
+            <Stat label="Guardians" value={String(vault.guardianCount)} />
+            <Stat label="Threshold" value={`${vault.mOfNThreshold}-of-${vault.guardianCount}`} />
+          </div>
+        </div>
 
-        {/* Flags */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>STATUS FLAGS</Text>
-          <FlagRow label="75% warning sent"   active={vault.warning75Sent}    color={Colors.YELLOW} />
-          <FlagRow label="90% warning sent"   active={vault.warning90Sent}    color={Colors.ORANGE} />
-          <FlagRow label="Anomaly flagged"     active={vault.anomalyFlagged}   color={Colors.CRITICAL} />
-          <FlagRow label="Trigger signalled"   active={vault.triggerSignalled} color={Colors.RED} />
-        </View>
+        {/* Status flags */}
+        <div style={styles.card}>
+          <p style={styles.cardTitle}>STATUS FLAGS</p>
+          <FlagRow label="75% warning sent"  active={vault.warning75Sent}    color={Colors.YELLOW}   />
+          <FlagRow label="90% warning sent"  active={vault.warning90Sent}    color={Colors.ORANGE}   />
+          <FlagRow label="Anomaly flagged"    active={vault.anomalyFlagged}   color={Colors.CRITICAL} />
+          <FlagRow label="Trigger signalled"  active={vault.triggerSignalled} color={Colors.RED}      />
+        </div>
 
         {/* CTA buttons */}
-        <TouchableOpacity
+        <button
           style={styles.btnPrimary}
-          onPress={() => navigation.navigate("RiskBrief", { vault })}
+          onClick={() => navigate('/risk-brief', { state: { vault } })}
         >
-          <Text style={styles.btnPrimaryText}>View QVAC Risk Brief</Text>
-        </TouchableOpacity>
+          View QVAC Risk Brief
+        </button>
 
-        <TouchableOpacity
+        <button
           style={styles.btnSecondary}
-          onPress={() => navigation.navigate("SignCovenant", { vault })}
+          onClick={() => navigate('/sign-covenant', { state: { vault } })}
         >
-          <Text style={styles.btnSecondaryText}>Sign Covenant</Text>
-        </TouchableOpacity>
-
-      </ScrollView>
-    </SafeAreaView>
+          Sign Covenant
+        </button>
+      </div>
+    </div>
   );
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <View style={{ flex: 1, gap: 2 }}>
-      <Text style={{ ...Typography.label, fontSize: 9 }}>{label}</Text>
-      <Text style={Typography.body}>{value}</Text>
-    </View>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+      <span style={{ ...Typography.label, fontSize: '9px' }}>{label}</span>
+      <span style={Typography.body}>{value}</span>
+    </div>
   );
 }
 
 function FlagRow({ label, active, color }: { label: string; active: boolean; color: string }) {
-  // justifyContent: "space-between" on the row pushes the status text to the
-  // right without relying on marginLeft: "auto" which is not supported in
-  // React Native StyleSheet flex layouts.
   return (
-    <View style={flagRowStyles.row}>
-      <View style={[flagRowStyles.dot, { backgroundColor: active ? color : Colors.border }]} />
-      <Text style={[Typography.body, { color: active ? color : Colors.textMuted, flex: 1 }]}>
+    <div style={{
+      display:        'flex',
+      flexDirection:  'row',
+      alignItems:     'center',
+      justifyContent: 'space-between',
+      gap:            Spacing.sm,
+      paddingTop:     Spacing.xs,
+      paddingBottom:  Spacing.xs,
+    }}>
+      <div style={{
+        width:        '8px',
+        height:       '8px',
+        borderRadius: '4px',
+        backgroundColor: active ? color : Colors.border,
+        flexShrink:   0,
+      }} />
+      <span style={{ ...Typography.body, color: active ? color : Colors.textMuted, flex: 1 }}>
         {label}
-      </Text>
-      <Text style={[Typography.bodySmall, { color: active ? color : Colors.textDim }]}>
-        {active ? "ACTIVE" : "clear"}
-      </Text>
-    </View>
+      </span>
+      <span style={{ ...Typography.bodySmall, color: active ? color : Colors.textDim }}>
+        {active ? 'ACTIVE' : 'clear'}
+      </span>
+    </div>
   );
 }
 
-const flagRowStyles = StyleSheet.create({
-  row: {
-    flexDirection:  "row",
-    alignItems:     "center",
-    justifyContent: "space-between",
-    gap:            Spacing.sm,
-    paddingVertical: Spacing.xs,
-  },
-  dot: {
-    width:        8,
-    height:       8,
-    borderRadius: 4,
-  },
-});
-
-const styles = StyleSheet.create({
+const styles: Record<string, React.CSSProperties> = {
   safe: {
-    flex:            1,
     backgroundColor: Colors.background,
+    minHeight:       '100vh',
   },
   header: {
-    flexDirection:  "row",
-    alignItems:     "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical:   Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    display:        'flex',
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    paddingLeft:    Spacing.lg,
+    paddingRight:   Spacing.lg,
+    paddingTop:     Spacing.md,
+    paddingBottom:  Spacing.md,
+    borderBottom:   `1px solid ${Colors.border}`,
   },
   backBtn: {
-    padding: Spacing.xs,
-  },
-  backText: {
-    ...Typography.body,
-    color: Colors.accent,
+    background: 'none',
+    border:     'none',
+    color:      Colors.accent,
+    cursor:     'pointer',
+    fontSize:   '14px',
+    padding:    Spacing.xs,
   },
   scroll: {
-    padding: Spacing.lg,
-    gap:     Spacing.md,
+    padding:       Spacing.lg,
+    display:       'flex',
+    flexDirection: 'column',
+    gap:           Spacing.md,
   },
   zoneBanner: {
-    flexDirection:  "row",
-    alignItems:     "center",
-    gap:            Spacing.sm,
-    borderWidth:    1,
-    borderRadius:   Radius.md,
-    padding:        Spacing.md,
+    display:       'flex',
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           Spacing.sm,
+    borderRadius:  `${Radius.md}px`,
+    padding:       Spacing.md,
   },
   zoneDot: {
-    width:        10,
-    height:       10,
-    borderRadius: 5,
+    width:        '10px',
+    height:       '10px',
+    borderRadius: '5px',
+    flexShrink:   0,
   },
   zoneText: {
     ...Typography.heading3,
+    margin: 0,
   },
   section: {
-    gap: Spacing.xs,
+    display:       'flex',
+    flexDirection: 'column',
+    gap:           Spacing.xs,
   },
   label: {
     ...Typography.label,
+    margin: 0,
   },
   mono: {
     ...Typography.mono,
-    fontSize: 11,
-    color:    Colors.textPrimary,
+    fontSize:  '11px',
+    color:     Colors.textPrimary,
+    margin:    0,
+    wordBreak: 'break-all',
   },
   card: {
     backgroundColor: Colors.surface,
-    borderRadius:    Radius.md,
-    borderWidth:     1,
-    borderColor:     Colors.border,
+    borderRadius:    `${Radius.md}px`,
+    border:          `1px solid ${Colors.border}`,
     padding:         Spacing.md,
+    display:         'flex',
+    flexDirection:   'column',
     gap:             Spacing.sm,
   },
   cardTitle: {
     ...Typography.label,
+    margin:       0,
     marginBottom: Spacing.xs,
   },
   row: {
-    flexDirection: "row",
+    display:       'flex',
+    flexDirection: 'row',
     gap:           Spacing.md,
   },
   btnPrimary: {
     backgroundColor: Colors.accent,
-    borderRadius:    Radius.md,
+    borderRadius:    `${Radius.md}px`,
     padding:         Spacing.md,
-    alignItems:      "center",
+    textAlign:       'center',
+    border:          'none',
+    color:           Colors.background,
+    fontSize:        '16px',
+    fontWeight:      '600',
+    cursor:          'pointer',
+    width:           '100%',
     marginTop:       Spacing.sm,
-  },
-  btnPrimaryText: {
-    ...Typography.heading3,
-    color: Colors.background,
   },
   btnSecondary: {
     backgroundColor: Colors.surface,
-    borderRadius:    Radius.md,
-    borderWidth:     1,
-    borderColor:     Colors.border,
+    borderRadius:    `${Radius.md}px`,
+    border:          `1px solid ${Colors.border}`,
     padding:         Spacing.md,
-    alignItems:      "center",
+    textAlign:       'center',
+    color:           Colors.textPrimary,
+    fontSize:        '16px',
+    fontWeight:      '600',
+    cursor:          'pointer',
+    width:           '100%',
   },
-  btnSecondaryText: {
-    ...Typography.heading3,
-  },
-});
+};

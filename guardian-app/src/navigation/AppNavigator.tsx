@@ -1,64 +1,33 @@
 // guardian-app/src/navigation/AppNavigator.tsx
 //
-// Root navigation stack for the Guardian app.
-// Wires all four screens: GuardianDashboard → VaultDetail → RiskBrief → SignCovenant.
+// Root navigation for the Guardian Tauri app.
+// Uses React Router v6 (BrowserRouter + Routes) instead of
+// @react-navigation/native-stack which requires React Native.
 //
-// createNativeStackNavigator and NativeStackScreenProps MUST come from
-// @react-navigation/native-stack — NOT @react-navigation/stack.
-// These are different packages with incompatible APIs.
+// Route map mirrors the original stack exactly:
+//   /              → GuardianDashboard
+//   /vault         → VaultDetail    (vault passed via location.state)
+//   /risk-brief    → RiskBrief      (vault passed via location.state)
+//   /sign-covenant → SignCovenant   (vault passed via location.state)
 
-import React                             from "react";
-import { NavigationContainer }           from "@react-navigation/native";
-import { createNativeStackNavigator }    from "@react-navigation/native-stack";
-import { GuardianDashboard }             from "../screens/GuardianDashboard";
-import { VaultDetail }                   from "../screens/VaultDetail";
-import { RiskBrief }                     from "../screens/RiskBrief";
-import { SignCovenant }                  from "../screens/SignCovenant";
-import { Colors }                        from "../theme";
-import type { VaultSummary }             from "../hooks/useVaultData";
-
-// ── Navigation param list ─────────────────────────────────────────────────────
-
-export type RootStackParamList = {
-  GuardianDashboard: undefined;
-  VaultDetail:       { vault: VaultSummary };
-  RiskBrief:         { vault: VaultSummary };
-  SignCovenant:      { vault: VaultSummary };
-};
-
-const Stack = createNativeStackNavigator<RootStackParamList>();
-
-// ── Navigator ─────────────────────────────────────────────────────────────────
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { GuardianDashboard }             from '../screens/GuardianDashboard';
+import { VaultDetail }                   from '../screens/VaultDetail';
+import { RiskBrief }                     from '../screens/RiskBrief';
+import { SignCovenant }                  from '../screens/SignCovenant';
+import { Colors }                        from '../theme';
 
 export function AppNavigator() {
   return (
-    <NavigationContainer>
-      <Stack.Navigator
-        initialRouteName="GuardianDashboard"
-        screenOptions={{
-          headerShown:       false,
-          contentStyle:      { backgroundColor: Colors.background },
-          animation:         "slide_from_right",
-          gestureEnabled:    true,
-        }}
-      >
-        <Stack.Screen
-          name="GuardianDashboard"
-          component={GuardianDashboard}
-        />
-        <Stack.Screen
-          name="VaultDetail"
-          component={VaultDetail}
-        />
-        <Stack.Screen
-          name="RiskBrief"
-          component={RiskBrief}
-        />
-        <Stack.Screen
-          name="SignCovenant"
-          component={SignCovenant}
-        />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <div style={{ backgroundColor: Colors.background, minHeight: '100vh' }}>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/"              element={<GuardianDashboard />} />
+          <Route path="/vault"         element={<VaultDetail />} />
+          <Route path="/risk-brief"    element={<RiskBrief />} />
+          <Route path="/sign-covenant" element={<SignCovenant />} />
+        </Routes>
+      </BrowserRouter>
+    </div>
   );
 }

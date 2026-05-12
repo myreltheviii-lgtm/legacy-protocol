@@ -1,13 +1,12 @@
 // guardian-app/src/components/VaultCard.tsx
 //
 // Renders a single vault row in the GuardianDashboard list.
-// Shows zone indicator, silence duration, anomaly/trigger flags, and guardian counts.
+// Shows zone indicator, silence duration, anomaly/trigger flags, guardian counts.
+// Converted from React Native to HTML/CSS for Tauri webview.
 
-import React               from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
-import { Colors, Typography, Spacing, Radius, zoneColor } from "../theme";
-import { RiskBadge }       from "./RiskBadge";
-import type { VaultSummary } from "../hooks/useVaultData";
+import { Colors, Typography, Spacing, Radius, zoneColor } from '../theme';
+import { RiskBadge } from './RiskBadge';
+import type { VaultSummary } from '../hooks/useVaultData';
 
 interface Props {
   vault:   VaultSummary;
@@ -18,92 +17,104 @@ export function VaultCard({ vault, onPress }: Props) {
   const zc = zoneColor(vault.zone);
 
   return (
-    <TouchableOpacity
+    <div
       style={styles.card}
-      onPress={() => onPress(vault)}
-      activeOpacity={0.75}
+      onClick={() => onPress(vault)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={e => { if (e.key === 'Enter') onPress(vault); }}
     >
       {/* Zone indicator bar */}
-      <View style={[styles.zonebar, { backgroundColor: zc }]} />
+      <div style={{ ...styles.zonebar, backgroundColor: zc }} />
 
-      <View style={styles.body}>
+      <div style={styles.body}>
         {/* Header row */}
-        <View style={styles.row}>
-          <Text style={styles.address} numberOfLines={1}>
+        <div style={styles.row}>
+          <span style={styles.address}>
             {vault.vaultAddress.slice(0, 8)}…{vault.vaultAddress.slice(-6)}
-          </Text>
+          </span>
           <RiskBadge level={vault.zone} size="sm" />
-        </View>
+        </div>
 
         {/* Silence info */}
-        <View style={styles.row}>
-          <Text style={styles.meta}>
+        <div style={styles.row}>
+          <span style={styles.meta}>
             Silent {vault.silenceDays.toFixed(1)}d
             {vault.historicalAvgDays > 0
               ? `  ·  avg ${vault.historicalAvgDays.toFixed(1)}d`
-              : ""}
-          </Text>
+              : ''}
+          </span>
           {vault.isShielded && (
-            <Text style={styles.shield}>🔒 Shielded</Text>
+            <span style={styles.shield}>🔒 Shielded</span>
           )}
-        </View>
+        </div>
 
-        {/* Flags row — justifyContent: "space-between" on the row eliminates
-            the need for marginLeft: "auto" on the guardians text, which is not
-            supported as a valid value in React Native StyleSheet flex layouts. */}
-        <View style={styles.flags}>
-          <View style={styles.flagsLeft}>
+        {/* Flags row */}
+        <div style={styles.flagsRow}>
+          <div style={styles.flagsLeft}>
             {vault.anomalyFlagged && (
-              <View style={[styles.flag, { borderColor: Colors.CRITICAL }]}>
-                <Text style={[styles.flagText, { color: Colors.CRITICAL }]}>ANOMALY</Text>
-              </View>
+              <div style={{ ...styles.flag, borderColor: Colors.CRITICAL }}>
+                <span style={{ ...styles.flagText, color: Colors.CRITICAL }}>
+                  ANOMALY
+                </span>
+              </div>
             )}
             {vault.triggerSignalled && (
-              <View style={[styles.flag, { borderColor: Colors.RED }]}>
-                <Text style={[styles.flagText, { color: Colors.RED }]}>TRIGGER</Text>
-              </View>
+              <div style={{ ...styles.flag, borderColor: Colors.RED }}>
+                <span style={{ ...styles.flagText, color: Colors.RED }}>
+                  TRIGGER
+                </span>
+              </div>
             )}
-          </View>
-          <Text style={styles.guardians}>
-            {vault.guardianCount} guardian{vault.guardianCount !== 1 ? "s" : ""}
-            {"  "}·{"  "}
+          </div>
+          <span style={styles.guardians}>
+            {vault.guardianCount} guardian{vault.guardianCount !== 1 ? 's' : ''}
+            {'  ·  '}
             {vault.mOfNThreshold}-of-{vault.guardianCount} required
-          </Text>
-        </View>
-      </View>
-    </TouchableOpacity>
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
 
-const styles = StyleSheet.create({
+const styles: Record<string, React.CSSProperties> = {
   card: {
-    flexDirection:   "row",
+    display:         'flex',
+    flexDirection:   'row',
     backgroundColor: Colors.surface,
-    borderRadius:    Radius.md,
-    borderWidth:     1,
-    borderColor:     Colors.border,
+    borderRadius:    `${Radius.md}px`,
+    border:          `1px solid ${Colors.border}`,
     marginBottom:    Spacing.sm,
-    overflow:        "hidden",
+    overflow:        'hidden',
+    cursor:          'pointer',
   },
   zonebar: {
-    width: 4,
+    width:     '4px',
+    flexShrink: 0,
   },
   body: {
-    flex:    1,
-    padding: Spacing.md,
-    gap:     Spacing.xs,
+    flex:          1,
+    padding:       Spacing.md,
+    display:       'flex',
+    flexDirection: 'column',
+    gap:           Spacing.xs,
   },
   row: {
-    flexDirection:  "row",
-    alignItems:     "center",
-    justifyContent: "space-between",
+    display:        'flex',
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
   },
   address: {
     ...Typography.mono,
-    fontSize: 13,
-    color:    Colors.textPrimary,
-    flex:     1,
-    marginRight: Spacing.sm,
+    fontSize:     '13px',
+    color:        Colors.textPrimary,
+    flex:         1,
+    marginRight:  Spacing.sm,
+    overflow:     'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace:   'nowrap',
   },
   meta: {
     ...Typography.bodySmall,
@@ -112,31 +123,36 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: Colors.accent,
   },
-  flags: {
-    flexDirection:  "row",
-    alignItems:     "center",
-    justifyContent: "space-between",
+  flagsRow: {
+    display:        'flex',
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
   },
   flagsLeft: {
-    flexDirection: "row",
-    alignItems:    "center",
+    display:       'flex',
+    flexDirection: 'row',
+    alignItems:    'center',
     gap:           Spacing.xs,
-    flexWrap:      "wrap",
     flex:          1,
+    flexWrap:      'wrap',
   },
   flag: {
-    borderWidth:       1,
-    borderRadius:      Radius.sm,
-    paddingHorizontal: 6,
-    paddingVertical:   2,
+    borderWidth:   '1px',
+    borderStyle:   'solid',
+    borderRadius:  `${Radius.sm}px`,
+    paddingLeft:   '6px',
+    paddingRight:  '6px',
+    paddingTop:    '2px',
+    paddingBottom: '2px',
   },
   flagText: {
-    fontSize:    9,
-    fontWeight:  "700",
-    letterSpacing: 0.6,
+    fontSize:      '9px',
+    fontWeight:    '700',
+    letterSpacing: '0.6px',
   },
   guardians: {
     ...Typography.bodySmall,
-    textAlign: "right",
+    textAlign: 'right',
   },
-});
+};

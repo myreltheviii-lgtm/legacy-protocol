@@ -1,10 +1,9 @@
 // guardian-app/src/components/LoadingOverlay.tsx
 //
 // Full-screen loading overlay with optional message text.
+// Converted from React Native to HTML/CSS for Tauri webview.
 
-import React       from "react";
-import { View, ActivityIndicator, Text, StyleSheet } from "react-native";
-import { Colors, Typography, Spacing } from "../theme";
+import { Colors, Typography, Spacing } from '../theme';
 
 interface Props {
   message?: string;
@@ -12,26 +11,35 @@ interface Props {
 
 export function LoadingOverlay({ message }: Props) {
   return (
-    <View style={styles.container}>
-      <ActivityIndicator size="large" color={Colors.accent} />
-      {message ? (
-        <Text style={styles.message}>{message}</Text>
-      ) : null}
-    </View>
+    <div style={styles.container}>
+      <div style={styles.spinner} />
+      {message && <p style={styles.message}>{message}</p>}
+    </div>
   );
 }
 
-const styles = StyleSheet.create({
+const styles: Record<string, React.CSSProperties> = {
   container: {
-    flex:            1,
+    display:         'flex',
+    flexDirection:   'column',
+    alignItems:      'center',
+    justifyContent:  'center',
     backgroundColor: Colors.background,
-    alignItems:      "center",
-    justifyContent:  "center",
+    minHeight:       '100vh',
     gap:             Spacing.md,
+  },
+  spinner: {
+    width:          '40px',
+    height:         '40px',
+    borderRadius:   '50%',
+    border:         `3px solid ${Colors.border}`,
+    borderTopColor: Colors.accent,
+    animation:      'spin 0.8s linear infinite',
   },
   message: {
     ...Typography.bodySmall,
-    textAlign: "center",
-    maxWidth:  240,
+    textAlign: 'center',
+    maxWidth:  '240px',
+    margin:    0,
   },
-});
+};

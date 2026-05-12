@@ -2,11 +2,13 @@
 //
 // Fetches vault and guardian data from the watcher's /vaults HTTP endpoint
 // and derives urgency scores for dashboard sorting.
-// All data is behavioral metadata — no Cloak cryptographic fields are exposed.
+// Converted from Expo to Tauri: EXPO_PUBLIC_* env vars replaced with
+// Vite's import.meta.env.VITE_* pattern (baked in at build time).
+// All data is behavioral metadata — no Cloak cryptographic fields exposed.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from 'react';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 
 export interface VaultSummary {
   vaultAddress:             string;
@@ -30,20 +32,20 @@ export interface VaultSummary {
   lastPolledSlot:           string;
   // Derived client-side
   urgencyScore:             number;
-  zone:                     "GREEN" | "YELLOW" | "ORANGE" | "RED";
+  zone:                     'GREEN' | 'YELLOW' | 'ORANGE' | 'RED';
   silenceDays:              number;
   historicalAvgDays:        number;
   isShielded:               boolean;
 }
 
-// EXPO_PUBLIC_WATCHER_URL must be set at build time — no fallback is accepted
-// because a hardcoded localhost address would silently fail in production.
-// If this var is absent the hook surfaces an actionable error in the UI.
-const WATCHER_URL     = process.env.EXPO_PUBLIC_WATCHER_URL ?? "";
-const SLOTS_PER_DAY   = 172_800;
+// VITE_WATCHER_URL must be set in .env before building.
+// Vite bakes VITE_* vars at build time via import.meta.env.
+// No fallback is accepted — a missing var surfaces an actionable UI error.
+const WATCHER_URL         = import.meta.env.VITE_WATCHER_URL as string ?? '';
+const SLOTS_PER_DAY       = 172_800;
 const REFRESH_INTERVAL_MS = 30_000;
 
-// ── Hook ──────────────────────────────────────────────────────────────────────
+// ── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useVaultData() {
   const [vaults,    setVaults]    = useState<VaultSummary[]>([]);
@@ -54,8 +56,8 @@ export function useVaultData() {
   const fetchVaults = useCallback(async () => {
     if (!WATCHER_URL) {
       setError(
-        "EXPO_PUBLIC_WATCHER_URL is not configured. " +
-        "Set it in your .env file before building the app.",
+        'VITE_WATCHER_URL is not configured. ' +
+        'Set it in your .env file before building the app.',
       );
       setLoading(false);
       return;
@@ -68,31 +70,31 @@ export function useVaultData() {
       const raw: Array<Record<string, unknown>> = await res.json();
 
       const enriched: VaultSummary[] = raw.map((v) => {
-        const lastCheckIn  = Number(v.lastCheckInSlot  ?? "0");
-        const threshold    = Number(v.inactivityThresholdSlots ?? "1");
-        const lastPolled   = Number(v.lastPolledSlot   ?? "0");
-        const checkinCount = Number(v.checkinCount     ?? "0");
-        const sumIntervals = Number(v.sumOfIntervals   ?? "0");
+        const lastCheckIn  = Number(v.lastCheckInSlot  ?? '0');
+        const threshold    = Number(v.inactivityThresholdSlots ?? '1');
+        const lastPolled   = Number(v.lastPolledSlot   ?? '0');
+        const checkinCount = Number(v.checkinCount     ?? '0');
+        const sumIntervals = Number(v.sumOfIntervals   ?? '0');
 
         const elapsedSlots = Math.max(0, lastPolled - lastCheckIn);
         const score        = threshold > 0 ? (elapsedSlots / threshold) * 100 : 0;
 
-        const zone: VaultSummary["zone"] =
-          score >= 100 ? "RED"    :
-          score >= 90  ? "ORANGE" :
-          score >= 75  ? "YELLOW" : "GREEN";
+        const zone: VaultSummary['zone'] =
+          score >= 100 ? 'RED'    :
+          score >= 90  ? 'ORANGE' :
+          score >= 75  ? 'YELLOW' : 'GREEN';
 
-        const silenceDays        = elapsedSlots / SLOTS_PER_DAY;
-        const historicalAvgDays  =
+        const silenceDays       = elapsedSlots / SLOTS_PER_DAY;
+        const historicalAvgDays =
           checkinCount > 0 && sumIntervals > 0
             ? (sumIntervals / checkinCount) / SLOTS_PER_DAY
             : 0;
 
         // Urgency score: zones get base weights; anomaly and trigger flags add bonus.
         const zoneWeight =
-          zone === "RED"    ? 1000 :
-          zone === "ORANGE" ? 100  :
-          zone === "YELLOW" ? 10   : 1;
+          zone === 'RED'    ? 1000 :
+          zone === 'ORANGE' ? 100  :
+          zone === 'YELLOW' ? 10   : 1;
 
         const urgencyScore =
           zoneWeight * score +
@@ -102,8 +104,7 @@ export function useVaultData() {
         return {
           vaultAddress:             v.vaultAddress             as string,
           ownerAddress:             v.ownerAddress             as string,
-          // beneficiary is the watcher's record of beneficiary_utxo_pubkey (hex string).
-          beneficiary:              (v.beneficiary as string) ?? "",
+          beneficiary:              (v.beneficiary as string)  ?? '',
           lastCheckInSlot:          v.lastCheckInSlot          as string,
           inactivityThresholdSlots: v.inactivityThresholdSlots as string,
           depositedLamports:        v.depositedLamports        as string,
@@ -120,7 +121,7 @@ export function useVaultData() {
           zone,
           silenceDays,
           historicalAvgDays,
-          isShielded: (v.depositedLamports as string) === "0",
+          isShielded: (v.depositedLamports as string) === '0',
         };
       });
 

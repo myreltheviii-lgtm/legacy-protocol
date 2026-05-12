@@ -1,0 +1,38 @@
+{
+  "productName": "Guardian",
+  "version": "1.0.0",
+  "identifier": "com.legacyprotocol.guardian",
+  "build": {
+    "beforeDevCommand": "npm run dev:frontend",
+    "beforeBuildCommand": "npm run build:frontend",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Guardian",
+        "width": 420,
+        "height": 900,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "externalBin": [
+      "binaries/signing-service",
+      "binaries/qvac-sidecar"
+    ]
+  },
+  "plugins": {
+    "shell": {
+      "open": false,
+      "sidecar": true
+    }
+  }
+}

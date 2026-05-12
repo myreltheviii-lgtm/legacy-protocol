@@ -1,67 +1,42 @@
 // guardian-app/src/screens/SignCovenant.tsx
 //
-// Covenant signing screen. The guardian enters their Shamir share (base64),
-// optionally tests secret reconstruction against a known threshold, and then
-// executes the Cloak shielded transfer to complete the inheritance handover.
+// Covenant signing screen. Manages Shamir shares, scans the Cloak shielded
+// pool, and executes the inheritance transfer via the signing-service sidecar.
+// Converted from React Native to HTML/CSS for Tauri webview.
 //
-// Execution flow:
-//   Phase 1 — entry:    Guardian pastes their Shamir share(s) and their
-//                        Solana wallet private key (base58, 64 bytes).
-//   Phase 2 — scanning: scanOwnerUtxos() reconstructs the owner key internally,
-//                        scans the shielded pool, zeroes the key, and returns
-//                        the vault UTXOs and total amount.
-//   Phase 3 — confirm:  Guardian reviews the amount and confirms execution.
-//   Phase 4 — executing: reconstructAndTransfer() does the final Cloak transfer.
-//   Phase 5 — done/error.
-//
-// Security invariants:
-//   Private key bytes are zeroed immediately after use in every code path.
+// Security invariants fully preserved from the Expo version:
+//   walletKeyRef holds the private key in a mutable ref — NOT in React state.
+//   Key is never captured in the component state tree or DevTools snapshots.
+//   Key is zeroed in the finally block of executeTransfer() on every code path.
 //   No private key appears in logs, state, or UI.
-//   The guardian's Solana keypair is constructed and zeroed inside the worklet —
-//   it never exists as a Keypair object in the RN JS heap.
-//   walletKeyRef holds the base58 private key string in a mutable ref —
-//   NOT in React state — so it does not live in the component state tree,
-//   is not captured in React snapshots or DevTools state, and is cleared
-//   immediately after use in every code path including failures.
-//
-// Metro safety: zero Cloak imports in this file.
-// All Cloak calls go through cloak-bridge.ts → Bare worklet.
+//   All Cloak calls go through cloak-bridge.ts → signing-service sidecar HTTP.
+//   keyClearCounter forces the password input to remount and visually clear.
 
-import React, { useState, useRef }            from "react";
-import {
-  View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, SafeAreaView, StatusBar, Alert,
-} from "react-native";
-import type { NativeStackScreenProps }   from "@react-navigation/native-stack";
-import { LoadingOverlay }                from "../components/LoadingOverlay";
-import { Colors, Typography, Spacing, Radius } from "../theme";
-import type { RootStackParamList }       from "../navigation/AppNavigator";
-import { connectionUrl }                 from "../lib/sdk";
+import { useState, useRef }           from 'react';
+import { useNavigate, useLocation }   from 'react-router-dom';
+import { LoadingOverlay }             from '../components/LoadingOverlay';
+import { Colors, Typography, Spacing, Radius } from '../theme';
+import { connectionUrl }              from '../lib/sdk';
 import {
   scanOwnerUtxos,
   reconstructAndTransfer,
   testReconstruction,
-} from "../lib/cloak-bridge";
-import type { GuardianShare }            from "../lib/cloak-bridge";
+}                                     from '../lib/cloak-bridge';
+import type { GuardianShare }         from '../lib/cloak-bridge';
+import type { VaultSummary }          from '../hooks/useVaultData';
 
-type Props = NativeStackScreenProps<RootStackParamList, "SignCovenant">;
+type Phase = 'entry' | 'scanning' | 'confirm' | 'executing' | 'done' | 'error';
 
-type Phase =
-  | "entry"
-  | "scanning"
-  | "confirm"
-  | "executing"
-  | "done"
-  | "error";
+export function SignCovenant() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const vault    = location.state?.vault as VaultSummary | undefined;
 
-export function SignCovenant({ navigation, route }: Props) {
-  const { vault } = route.params;
-
-  const [phase,            setPhase]        = useState<Phase>("entry");
-  const [shareInput,       setShareInput]   = useState("");
-  const [additionalShares, setAdditional]   = useState<string[]>([""]);
-  const [statusMessage,    setStatus]       = useState("");
-  const [errorMessage,     setErrorMessage] = useState("");
+  const [phase,            setPhase]        = useState<Phase>('entry');
+  const [shareInput,       setShareInput]   = useState('');
+  const [additionalShares, setAdditional]   = useState<string[]>(['']);
+  const [statusMessage,    setStatus]       = useState('');
+  const [errorMessage,     setErrorMessage] = useState('');
   const [scanResult,       setScanResult]   = useState<{
     vaultUtxos:  unknown[];
     totalAmount: bigint;
@@ -70,15 +45,20 @@ export function SignCovenant({ navigation, route }: Props) {
   // The guardian wallet private key (base58) is held in a mutable ref —
   // NOT in React state — so it never appears in the component state tree,
   // React DevTools snapshots, or memory dumps of the state tree.
-  // It is sent to the worklet and cleared in the finally block of
-  // executeTransfer() covering every code path.
-  // walletKeyClearCounter forces the uncontrolled TextInput to remount
+  // It is sent to the signing-service sidecar and cleared in the finally
+  // block of executeTransfer() covering every code path.
+  // keyClearCounter forces the uncontrolled password input to remount
   // and visually clear after each use without holding the key in state.
-  const walletKeyRef = useRef("");
-  const [walletKeyClearCounter, setWalletKeyClearCounter] = useState(0);
+  const walletKeyRef                          = useRef('');
+  const [keyClearCounter, setKeyClearCounter] = useState(0);
+
+  if (!vault) {
+    navigate('/');
+    return null;
+  }
 
   const handleAddShareField = () => {
-    setAdditional(prev => [...prev, ""]);
+    setAdditional(prev => [...prev, '']);
   };
 
   const handleShareChange = (index: number, value: string) => {
@@ -98,13 +78,13 @@ export function SignCovenant({ navigation, route }: Props) {
     return allStrings.map((shareBase64, i) => ({
       shareIndex:     i + 1,
       shareBase64,
-      guardianWallet: "",
+      guardianWallet: '',
     }));
   }
 
   const handleTestReconstruction = async () => {
     if (!shareInput.trim()) {
-      Alert.alert("Missing share", "Enter your Shamir share first.");
+      alert('Enter your Shamir share first.');
       return;
     }
 
@@ -116,92 +96,71 @@ export function SignCovenant({ navigation, route }: Props) {
     if (allShareStrings.length < vault.mOfNThreshold) {
       setStatus(
         `Need at least ${vault.mOfNThreshold} shares to reconstruct. ` +
-        `You have ${allShareStrings.length}.`
+        `You have ${allShareStrings.length}.`,
       );
       return;
     }
 
     try {
-      // Reconstruction happens inside the worklet.
-      // The reconstructed key is zeroed there — never exists in RN heap.
+      // Reconstruction happens inside the signing-service sidecar.
+      // The reconstructed key is zeroed there — never exists in the JS heap.
       await testReconstruction({ shareStrings: allShareStrings });
       setStatus(
-        `Reconstruction succeeded with ${allShareStrings.length} shares. Shares are consistent.`
+        `Reconstruction succeeded with ${allShareStrings.length} shares. Shares are consistent.`,
       );
     } catch (err) {
-      Alert.alert(
-        "Reconstruction failed",
-        err instanceof Error ? err.message : String(err),
-      );
+      alert(`Reconstruction failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
   const handleScan = async () => {
     if (!shareInput.trim()) {
-      Alert.alert("Missing share", "Enter your Shamir share before scanning.");
+      alert('Enter your Shamir share before scanning.');
       return;
     }
     if (!walletKeyRef.current.trim()) {
-      Alert.alert(
-        "Missing wallet key",
-        "Paste your guardian wallet private key (base58) to pay for the Cloak transfer.",
-      );
+      alert('Paste your guardian wallet private key (base58) to pay for the Cloak transfer.');
       return;
     }
 
     const shares = buildGuardianShares();
     if (shares.length < vault.mOfNThreshold) {
-      Alert.alert(
-        "Not enough shares",
-        `Need at least ${vault.mOfNThreshold} shares. You have ${shares.length}.`,
-      );
+      alert(`Need at least ${vault.mOfNThreshold} shares. You have ${shares.length}.`);
       return;
     }
 
-    setPhase("scanning");
-    setStatus("Scanning shielded pool for vault UTXOs…");
+    setPhase('scanning');
+    setStatus('Scanning shielded pool for vault UTXOs…');
 
     try {
-      const result = await scanOwnerUtxos({
-        guardianShares: shares,
-        connectionUrl,
-      });
+      const result = await scanOwnerUtxos({ guardianShares: shares, connectionUrl });
       setScanResult(result);
-      setStatus("");
-      setPhase("confirm");
+      setStatus('');
+      setPhase('confirm');
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : String(err));
-      setPhase("error");
+      setPhase('error');
     }
   };
 
   const handleExecute = () => {
     if (!scanResult) return;
-
-    Alert.alert(
-      "Confirm inheritance execution",
-      "This action is irreversible. Once submitted, the shielded transfer cannot be undone. Proceed?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Execute",
-          style: "destructive",
-          onPress: () => { void executeTransfer(); },
-        },
-      ],
+    const confirmed = window.confirm(
+      'This action is irreversible. Once submitted, the shielded transfer cannot be undone. Proceed?',
     );
+    if (confirmed) void executeTransfer();
   };
 
   const executeTransfer = async () => {
     if (!scanResult) return;
 
-    setPhase("executing");
-    setStatus("Executing Cloak shielded transfer…");
+    setPhase('executing');
+    setStatus('Executing Cloak shielded transfer…');
 
     try {
-      // The private key is passed to the worklet over loopback.
-      // The worklet constructs the Keypair, signs, and zeroes it internally.
-      // The key never exists as a Keypair object in the RN JS heap.
+      // The private key is passed to the signing-service sidecar over loopback.
+      // The sidecar constructs the Keypair, signs, and zeroes it internally.
+      // The key never exists as a Keypair object in the JS heap.
       await reconstructAndTransfer({
         guardianShares:           buildGuardianShares(),
         beneficiaryUtxoPubkeyHex: vault.beneficiary,
@@ -211,233 +170,232 @@ export function SignCovenant({ navigation, route }: Props) {
         connectionUrl,
       });
 
-      setStatus("Cloak shielded transfer submitted successfully.");
-      setPhase("done");
+      setStatus('Cloak shielded transfer submitted successfully.');
+      setPhase('done');
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : String(err));
-      setPhase("error");
+      setPhase('error');
     } finally {
       // Clear the private key ref regardless of outcome.
-      // Force-remount the TextInput so it visually clears.
-      walletKeyRef.current = "";
-      setWalletKeyClearCounter(c => c + 1);
+      // Force-remount the password input so it visually clears.
+      walletKeyRef.current = '';
+      setKeyClearCounter(c => c + 1);
     }
   };
 
-  if (phase === "scanning" || phase === "executing") {
+  if (phase === 'scanning' || phase === 'executing') {
     return <LoadingOverlay message={statusMessage} />;
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.background} />
-
+    <div style={styles.safe}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Risk Brief</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Sign Covenant</Text>
-        <View style={{ width: 80 }} />
-      </View>
+      <div style={styles.header}>
+        <button style={styles.backBtn} onClick={() => navigate(-1)}>
+          ← Risk Brief
+        </button>
+        <h3 style={styles.headerTitle}>Sign Covenant</h3>
+        <div style={{ width: '80px' }} />
+      </div>
 
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTabs="handled">
-
+      <div style={styles.scroll}>
         {/* Vault context */}
-        <View style={styles.contextCard}>
-          <Text style={styles.label}>VAULT</Text>
-          <Text style={styles.mono} numberOfLines={1}>
+        <div style={styles.contextCard}>
+          <p style={styles.label}>VAULT</p>
+          <p style={styles.mono}>
             {vault.vaultAddress.slice(0, 12)}…{vault.vaultAddress.slice(-8)}
-          </Text>
-          <Text style={styles.meta}>
+          </p>
+          <p style={styles.meta}>
             Requires {vault.mOfNThreshold}-of-{vault.guardianCount} guardian signatures
-          </Text>
-        </View>
+          </p>
+        </div>
 
         {/* Irreversible warning */}
-        <View style={styles.warningCard}>
-          <Text style={styles.warningText}>
-            ⚠ Executing inheritance is irreversible. The Cloak shielded transfer cannot be undone once submitted.
-          </Text>
-        </View>
+        <div style={styles.warningCard}>
+          <p style={styles.warningText}>
+            ⚠ Executing inheritance is irreversible. The Cloak shielded transfer
+            cannot be undone once submitted.
+          </p>
+        </div>
 
         {/* Scan result — shown in confirm phase */}
-        {phase === "confirm" && scanResult && (
-          <View style={styles.scanResultCard}>
-            <Text style={styles.scanResultTitle}>UTXO SCAN COMPLETE</Text>
-            <Text style={styles.scanResultBody}>
+        {phase === 'confirm' && scanResult && (
+          <div style={styles.scanResultCard}>
+            <p style={styles.scanResultTitle}>UTXO SCAN COMPLETE</p>
+            <p style={styles.scanResultBody}>
               Found {scanResult.vaultUtxos.length} UTXO
-              {scanResult.vaultUtxos.length !== 1 ? "s" : ""} totalling{" "}
+              {scanResult.vaultUtxos.length !== 1 ? 's' : ''} totalling{' '}
               {(Number(scanResult.totalAmount) / 1e9).toFixed(4)} SOL.
-            </Text>
-            <Text style={styles.scanResultNote}>
-              Cloak fee will be deducted. Confirm to execute the shielded transfer to the beneficiary.
-            </Text>
-          </View>
+            </p>
+            <p style={styles.scanResultNote}>
+              Cloak fee will be deducted. Confirm to execute the shielded transfer
+              to the beneficiary.
+            </p>
+          </div>
         )}
 
         {/* Entry phase inputs */}
-        {(phase === "entry" || phase === "confirm") && (
+        {(phase === 'entry' || phase === 'confirm') && (
           <>
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>YOUR SHAMIR SHARE</Text>
-              <TextInput
-                style={styles.input}
+            <div style={styles.section}>
+              <p style={styles.sectionLabel}>YOUR SHAMIR SHARE</p>
+              <textarea
+                style={styles.textarea}
                 value={shareInput}
-                onChangeText={setShareInput}
+                onChange={e => setShareInput(e.target.value)}
                 placeholder="Paste your base64 share here"
-                placeholderTextColor={Colors.textDim}
-                multiline
-                numberOfLines={3}
+                rows={3}
                 autoCapitalize="none"
-                autoCorrect={false}
-                secureTextEntry={false}
+                autoCorrect="off"
+                spellCheck={false}
               />
-            </View>
+            </div>
 
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>ADDITIONAL SHARES (for threshold)</Text>
+            <div style={styles.section}>
+              <p style={styles.sectionLabel}>ADDITIONAL SHARES (for threshold)</p>
               {additionalShares.map((share, i) => (
-                <TextInput
+                <input
                   key={i}
-                  style={[styles.input, { marginTop: i > 0 ? Spacing.xs : 0 }]}
+                  style={{ ...styles.input, marginTop: i > 0 ? Spacing.xs : 0 }}
                   value={share}
-                  onChangeText={v => handleShareChange(i, v)}
+                  onChange={e => handleShareChange(i, e.target.value)}
                   placeholder={`Share ${i + 2}`}
-                  placeholderTextColor={Colors.textDim}
                   autoCapitalize="none"
-                  autoCorrect={false}
+                  autoCorrect="off"
+                  spellCheck={false}
                 />
               ))}
-              <TouchableOpacity style={styles.addShareBtn} onPress={handleAddShareField}>
-                <Text style={styles.addShareText}>+ Add share</Text>
-              </TouchableOpacity>
-            </View>
+              <button style={styles.addShareBtn} onClick={handleAddShareField}>
+                + Add share
+              </button>
+            </div>
 
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>GUARDIAN WALLET KEY (base58)</Text>
-              <Text style={styles.sectionHint}>
-                Your Solana wallet private key — used only to sign the Cloak transaction. Not stored in state.
-              </Text>
-              <TextInput
-                key={walletKeyClearCounter}
+            <div style={styles.section}>
+              <p style={styles.sectionLabel}>GUARDIAN WALLET KEY (base58)</p>
+              <p style={styles.sectionHint}>
+                Your Solana wallet private key — used only to sign the Cloak
+                transaction. Not stored in state.
+              </p>
+              <input
+                key={keyClearCounter}
                 style={styles.input}
-                onChangeText={v => { walletKeyRef.current = v; }}
+                type="password"
+                onChange={e => { walletKeyRef.current = e.target.value; }}
                 placeholder="Paste your base58 private key"
-                placeholderTextColor={Colors.textDim}
                 autoCapitalize="none"
-                autoCorrect={false}
-                secureTextEntry={true}
+                autoCorrect="off"
+                spellCheck={false}
               />
-            </View>
+            </div>
           </>
         )}
 
         {/* Status message */}
-        {statusMessage ? (
-          <View style={styles.statusBox}>
-            <Text style={styles.statusText}>{statusMessage}</Text>
-          </View>
-        ) : null}
+        {statusMessage && (
+          <div style={styles.statusBox}>
+            <p style={styles.statusText}>{statusMessage}</p>
+          </div>
+        )}
 
         {/* Done state */}
-        {phase === "done" ? (
-          <View style={styles.successBox}>
-            <Text style={styles.successText}>✓ Inheritance transfer executed successfully.</Text>
-            <TouchableOpacity style={styles.doneBtn} onPress={() => navigation.popToTop()}>
-              <Text style={styles.doneBtnText}>Return to Dashboard</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
+        {phase === 'done' && (
+          <div style={styles.successBox}>
+            <p style={styles.successText}>
+              ✓ Inheritance transfer executed successfully.
+            </p>
+            <button style={styles.doneBtn} onClick={() => navigate('/')}>
+              Return to Dashboard
+            </button>
+          </div>
+        )}
 
         {/* Error state */}
-        {phase === "error" ? (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorTitle}>Execution failed</Text>
-            <Text style={styles.errorBody}>{errorMessage}</Text>
-            <TouchableOpacity
+        {phase === 'error' && (
+          <div style={styles.errorBox}>
+            <p style={styles.errorTitle}>Execution failed</p>
+            <p style={styles.errorBody}>{errorMessage}</p>
+            <button
               style={styles.retryBtn}
-              onPress={() => { setPhase("entry"); setErrorMessage(""); setScanResult(null); }}
+              onClick={() => {
+                setPhase('entry');
+                setErrorMessage('');
+                setScanResult(null);
+              }}
             >
-              <Text style={styles.retryText}>Try again</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
+              Try again
+            </button>
+          </div>
+        )}
 
-        {/* Action buttons */}
-        {phase === "entry" && (
-          <View style={styles.actions}>
-            <TouchableOpacity
+        {/* Action buttons — entry phase */}
+        {phase === 'entry' && (
+          <div style={styles.actions}>
+            <button
               style={styles.testBtn}
-              onPress={() => { void handleTestReconstruction(); }}
+              onClick={() => void handleTestReconstruction()}
             >
-              <Text style={styles.testBtnText}>Test Reconstruction</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
+              Test Reconstruction
+            </button>
+            <button
               style={styles.executeBtn}
-              onPress={() => { void handleScan(); }}
+              onClick={() => void handleScan()}
             >
-              <Text style={styles.executeBtnText}>Scan & Confirm</Text>
-            </TouchableOpacity>
-          </View>
+              Scan & Confirm
+            </button>
+          </div>
         )}
 
-        {phase === "confirm" && scanResult && (
-          <View style={styles.actions}>
-            <TouchableOpacity
+        {/* Action buttons — confirm phase */}
+        {phase === 'confirm' && scanResult && (
+          <div style={styles.actions}>
+            <button
               style={styles.testBtn}
-              onPress={() => { setScanResult(null); setPhase("entry"); }}
+              onClick={() => { setScanResult(null); setPhase('entry'); }}
             >
-              <Text style={styles.testBtnText}>Back</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.executeBtn} onPress={handleExecute}>
-              <Text style={styles.executeBtnText}>Execute Inheritance</Text>
-            </TouchableOpacity>
-          </View>
+              Back
+            </button>
+            <button style={styles.executeBtn} onClick={handleExecute}>
+              Execute Inheritance
+            </button>
+          </div>
         )}
-
-      </ScrollView>
-    </SafeAreaView>
+      </div>
+    </div>
   );
 }
 
-const styles = StyleSheet.create({
-  safe:            { flex: 1, backgroundColor: Colors.background },
-  header:          { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  backBtn:         { width: 80, padding: Spacing.xs },
-  backText:        { ...Typography.body, color: Colors.accent },
-  headerTitle:     { ...Typography.heading3 },
-  scroll:          { padding: Spacing.lg, gap: Spacing.md },
-  contextCard:     { backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, padding: Spacing.md, gap: Spacing.xs },
-  label:           { ...Typography.label },
-  mono:            { ...Typography.mono, fontSize: 11, color: Colors.textPrimary },
-  meta:            { ...Typography.bodySmall },
-  warningCard:     { backgroundColor: Colors.CRITICAL + "11", borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.CRITICAL, padding: Spacing.md },
-  warningText:     { ...Typography.body, color: Colors.CRITICAL, lineHeight: 20 },
-  scanResultCard:  { backgroundColor: Colors.GREEN + "11", borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.GREEN, padding: Spacing.md, gap: Spacing.xs },
-  scanResultTitle: { ...Typography.label, color: Colors.GREEN },
-  scanResultBody:  { ...Typography.body, color: Colors.textPrimary },
-  scanResultNote:  { ...Typography.bodySmall, color: Colors.textMuted },
-  section:         { gap: Spacing.xs },
-  sectionLabel:    { ...Typography.label },
-  sectionHint:     { ...Typography.bodySmall, color: Colors.textMuted },
-  input:           { backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, color: Colors.textPrimary, fontFamily: "monospace", fontSize: 12, padding: Spacing.md, textAlignVertical: "top" },
-  addShareBtn:     { alignSelf: "flex-start", marginTop: Spacing.xs, padding: Spacing.xs },
-  addShareText:    { ...Typography.body, color: Colors.accent },
-  statusBox:       { backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, padding: Spacing.md },
-  statusText:      { ...Typography.body, color: Colors.textMuted },
-  successBox:      { backgroundColor: Colors.GREEN + "18", borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.GREEN, padding: Spacing.md, gap: Spacing.md, alignItems: "center" },
-  successText:     { ...Typography.body, color: Colors.GREEN },
-  doneBtn:         { backgroundColor: Colors.GREEN, borderRadius: Radius.md, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
-  doneBtnText:     { ...Typography.heading3, color: Colors.background },
-  errorBox:        { backgroundColor: Colors.CRITICAL + "18", borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.CRITICAL, padding: Spacing.md, gap: Spacing.sm },
-  errorTitle:      { ...Typography.heading3, color: Colors.CRITICAL },
-  errorBody:       { ...Typography.bodySmall, color: Colors.CRITICAL },
-  retryBtn:        { alignSelf: "flex-start", padding: Spacing.sm, borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.CRITICAL },
-  retryText:       { ...Typography.body, color: Colors.CRITICAL },
-  actions:         { gap: Spacing.sm, marginTop: Spacing.sm },
-  testBtn:         { backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, padding: Spacing.md, alignItems: "center" },
-  testBtnText:     { ...Typography.heading3 },
-  executeBtn:      { backgroundColor: Colors.accent, borderRadius: Radius.md, padding: Spacing.md, alignItems: "center" },
-  executeBtnText:  { ...Typography.heading3, color: Colors.background },
-});
+const styles: Record<string, React.CSSProperties> = {
+  safe:            { backgroundColor: Colors.background, minHeight: '100vh' },
+  header:          { display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: Spacing.lg, paddingRight: Spacing.lg, paddingTop: Spacing.md, paddingBottom: Spacing.md, borderBottom: `1px solid ${Colors.border}` },
+  backBtn:         { background: 'none', border: 'none', color: Colors.accent, cursor: 'pointer', fontSize: '14px', padding: Spacing.xs, width: '80px' },
+  headerTitle:     { ...Typography.heading3, margin: 0 },
+  scroll:          { padding: Spacing.lg, display: 'flex', flexDirection: 'column', gap: Spacing.md },
+  contextCard:     { backgroundColor: Colors.surface, borderRadius: `${Radius.md}px`, border: `1px solid ${Colors.border}`, padding: Spacing.md, display: 'flex', flexDirection: 'column', gap: Spacing.xs },
+  label:           { ...Typography.label, margin: 0 },
+  mono:            { ...Typography.mono, fontSize: '11px', color: Colors.textPrimary, margin: 0, wordBreak: 'break-all' },
+  meta:            { ...Typography.bodySmall, margin: 0 },
+  warningCard:     { backgroundColor: Colors.CRITICAL + '11', borderRadius: `${Radius.md}px`, border: `1px solid ${Colors.CRITICAL}`, padding: Spacing.md },
+  warningText:     { ...Typography.body, color: Colors.CRITICAL, lineHeight: '20px', margin: 0 },
+  scanResultCard:  { backgroundColor: Colors.GREEN + '11', borderRadius: `${Radius.md}px`, border: `1px solid ${Colors.GREEN}`, padding: Spacing.md, display: 'flex', flexDirection: 'column', gap: Spacing.xs },
+  scanResultTitle: { ...Typography.label, color: Colors.GREEN, margin: 0 },
+  scanResultBody:  { ...Typography.body, color: Colors.textPrimary, margin: 0 },
+  scanResultNote:  { ...Typography.bodySmall, color: Colors.textMuted, margin: 0 },
+  section:         { display: 'flex', flexDirection: 'column', gap: Spacing.xs },
+  sectionLabel:    { ...Typography.label, margin: 0 },
+  sectionHint:     { ...Typography.bodySmall, color: Colors.textMuted, margin: 0 },
+  textarea:        { backgroundColor: Colors.surface, borderRadius: `${Radius.md}px`, border: `1px solid ${Colors.border}`, color: Colors.textPrimary, fontFamily: 'monospace', fontSize: '12px', padding: Spacing.md, width: '100%', boxSizing: 'border-box', resize: 'vertical' },
+  input:           { backgroundColor: Colors.surface, borderRadius: `${Radius.md}px`, border: `1px solid ${Colors.border}`, color: Colors.textPrimary, fontFamily: 'monospace', fontSize: '12px', padding: Spacing.md, width: '100%', boxSizing: 'border-box' },
+  addShareBtn:     { alignSelf: 'flex-start', background: 'none', border: 'none', color: Colors.accent, cursor: 'pointer', fontSize: '14px', padding: Spacing.xs, marginTop: Spacing.xs },
+  statusBox:       { backgroundColor: Colors.surface, borderRadius: `${Radius.md}px`, border: `1px solid ${Colors.border}`, padding: Spacing.md },
+  statusText:      { ...Typography.body, color: Colors.textMuted, margin: 0 },
+  successBox:      { backgroundColor: Colors.GREEN + '18', borderRadius: `${Radius.md}px`, border: `1px solid ${Colors.GREEN}`, padding: Spacing.md, display: 'flex', flexDirection: 'column', gap: Spacing.md, alignItems: 'center' },
+  successText:     { ...Typography.body, color: Colors.GREEN, margin: 0 },
+  doneBtn:         { backgroundColor: Colors.GREEN, borderRadius: `${Radius.md}px`, padding: `${Spacing.sm}px ${Spacing.lg}px`, border: 'none', color: Colors.background, fontSize: '16px', fontWeight: '600', cursor: 'pointer' },
+  errorBox:        { backgroundColor: Colors.CRITICAL + '18', borderRadius: `${Radius.md}px`, border: `1px solid ${Colors.CRITICAL}`, padding: Spacing.md, display: 'flex', flexDirection: 'column', gap: Spacing.sm },
+  errorTitle:      { ...Typography.heading3, color: Colors.CRITICAL, margin: 0 },
+  errorBody:       { ...Typography.bodySmall, color: Colors.CRITICAL, margin: 0 },
+  retryBtn:        { alignSelf: 'flex-start', padding: Spacing.sm, borderRadius: `${Radius.sm}px`, border: `1px solid ${Colors.CRITICAL}`, background: 'none', color: Colors.CRITICAL, cursor: 'pointer', fontSize: '14px' },
+  actions:         { display: 'flex', flexDirection: 'column', gap: Spacing.sm, marginTop: Spacing.sm },
+  testBtn:         { backgroundColor: Colors.surface, borderRadius: `${Radius.md}px`, border: `1px solid ${Colors.border}`, padding: Spacing.md, textAlign: 'center', color: Colors.textPrimary, fontSize: '16px', fontWeight: '600', cursor: 'pointer' },
+  executeBtn:      { backgroundColor: Colors.accent, borderRadius: `${Radius.md}px`, border: 'none', padding: Spacing.md, textAlign: 'center', color: Colors.background, fontSize: '16px', fontWeight: '600', cursor: 'pointer' },
+};
