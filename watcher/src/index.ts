@@ -99,7 +99,7 @@ import type { LegacyVault }      from "./types/legacy_vault";
 import type { PollCycleSummary, VaultRecord } from "./types/watcher";
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const IDL = require("../../target/idl/legacy_vault.json") as LegacyVault;
+const IDL = require("../../idl/legacy_vault.json") as LegacyVault;
 
 // ── Process-level state ───────────────────────────────────────────────────────
 

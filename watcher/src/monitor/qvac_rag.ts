@@ -134,7 +134,6 @@ export async function initQVACRagStore(dbPath: string): Promise<void> {
   // passed to every embed() call for the lifetime of the process.
   _embedModelId = await loadModel({
     modelSrc:    GTE_LARGE_FP16,
-    modelType:   "embeddings",
     modelConfig: EMBEDDER_MODEL_CONFIG,
   });
 
@@ -228,9 +227,9 @@ export async function ingestVaultBehavior(
   try {
     // embed() returns number[] — the dense embedding vector for behaviorText.
     // GPU is disabled; inference runs entirely on CPU per EMBEDDER_MODEL_CONFIG.
-    const embedding: number[] = await embed({
+    const { embedding } = await embed({
       modelId: _embedModelId,
-      input:   behaviorText,
+      text:    behaviorText,
     });
 
     // Serialise to a raw Float32Array BLOB for compact SQLite storage.
@@ -308,9 +307,9 @@ export async function querySimilarTriggered(
     // Re-embed the stored behavior text to get the query vector.
     // Using the stored text (not a freshly built one) ensures the query vector
     // is in the same embedding space as the corpus vectors stored at ingest time.
-    const queryEmbedding: number[] = await embed({
+    const { embedding: queryEmbedding } = await embed({
       modelId: _embedModelId,
-      input:   behaviorRow.behavior_text,
+      text:    behaviorRow.behavior_text,
     });
     const queryVec = new Float32Array(queryEmbedding);
 

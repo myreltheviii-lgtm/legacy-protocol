@@ -83,7 +83,7 @@ function loadConfig(): WatcherConfig {
     rpcWsEndpoint,
     programId:     required("LEGACY_VAULT_PROGRAM_ID"),
 
-    geyserEndpoint:  required("GEYSER_GRPC_ENDPOINT"),
+    geyserEndpoint:  optional("GEYSER_GRPC_ENDPOINT", ""),
     geyserXToken:    optional("GEYSER_X_TOKEN", ""),
     heartbeatSlots:  optionalInt("HEARTBEAT_SLOTS", 300),
 

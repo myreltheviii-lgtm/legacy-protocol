@@ -140,15 +140,13 @@ export async function prewarmQVACModels(): Promise<void> {
 
   const llmId = await loadModel({
     modelSrc:    LLAMA_3_2_1B_INST_Q4_0,
-    modelType:   "llm",
-    modelConfig: LLM_MODEL_CONFIG,
+    modelConfig: { ctx_size: 2048, gpu_layers: 0, device: "cpu" as const, verbosity: 0 },
   });
   await unloadModel({ modelId: llmId });
 
   const embedId = await loadModel({
     modelSrc:    GTE_LARGE_FP16,
-    modelType:   "embeddings",
-    modelConfig: EMBEDDER_MODEL_CONFIG,
+    modelConfig: { gpuLayers: 0, device: "cpu" as const },
   });
   await unloadModel({ modelId: embedId });
 
@@ -169,8 +167,7 @@ export async function initQVACAnomalyEngine(): Promise<void> {
 
   _llmModelId = await loadModel({
     modelSrc:    LLAMA_3_2_1B_INST_Q4_0,
-    modelType:   "llm",
-    modelConfig: LLM_MODEL_CONFIG,
+    modelConfig: { ctx_size: 2048, gpu_layers: 0, device: "cpu" as const, verbosity: 0 },
   });
 
   logger.info({ modelId: _llmModelId }, "QVAC: anomaly LLM engine ready — model loaded");
@@ -308,14 +305,14 @@ export async function analyzeVaultAnomaly(
     // Awaiting result.text collects the full generated string after the
     // model finishes. stream: false is explicit — we need the complete
     // JSON response before parsing, not a token stream.
-    const result = completion({
-      modelId:          _llmModelId,
-      history:          [{ role: "user", content: prompt }],
-      stream:           false,
-      generationParams: { temp: 0.1, predict: 256 },
+    const run = completion({
+      modelId: _llmModelId,
+      history: [{ role: "user", content: prompt }],
+      stream:  false,
     });
 
-    const raw = await result.text;
+    const final = await run.final;
+    const raw   = final.raw.fullText;
 
     const parsed = parseQVACResponse(raw, fallback);
 
