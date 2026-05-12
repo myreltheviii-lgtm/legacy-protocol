@@ -25,6 +25,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            #[cfg(desktop)]
+            {
             let handle = app.handle().clone();
 
             // ── Spawn signing-service ────────────────────────────────────────
@@ -59,6 +61,7 @@ pub fn run() {
                 })?;
 
             app.manage(qvac_child);
+            } // end #[cfg(desktop)]
 
             Ok(())
         })
