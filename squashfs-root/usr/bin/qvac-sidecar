@@ -1,2 +1,0 @@
-#!/bin/bash
-node /workspaces/legacy-protocol/qvac-sidecar/index.js

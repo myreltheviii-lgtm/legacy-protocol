@@ -35,3 +35,4 @@ Thumbs.db
 .vercel
 .env*.local
 guardian-app/src-tauri/gen/
+squashfs-root/
