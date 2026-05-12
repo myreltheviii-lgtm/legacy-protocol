@@ -1,24 +1,5 @@
 'use strict';
 
-// qvac-sidecar/index.js
-//
-// Node.js HTTP server wrapping @qvac/sdk LLM inference for the Guardian app.
-// Runs as a Tauri sidecar on 127.0.0.1:7648.
-//
-// Endpoints:
-//   GET  /health   — health check
-//   POST /analyze  — accepts GuardianVaultContext, returns GuardianRiskBrief
-//
-// Uses the correct current @qvac/sdk API:
-//   loadModel({ modelSrc, modelType, modelConfig }) → modelId (string)
-//   completion({ modelId, history, stream, generationParams }) — synchronous
-//   await result.text — only .text is awaited, never completion() itself
-//   unloadModel({ modelId }) — always called in finally
-//
-// GPU forbidden throughout: device: "cpu", gpu_layers: 0 always.
-// Cloak cryptographic material never enters this module or the LLM prompt.
-// Data boundary: GuardianVaultContext contains behavioral metadata only.
-
 const http = require('http');
 
 const {
@@ -31,19 +12,12 @@ const {
 const PORT = 7648;
 const HOST = '127.0.0.1';
 
-// ── Model configuration ──────────────────────────────────────────────────────
-//
-// @qvac/sdk defaults device to "gpu" and gpu_layers to 99.
-// Both must be explicitly overridden for CPU-only operation.
-
 const LLM_MODEL_CONFIG = {
-  ctx_size:   1024,   // guardian app context window
-  device:     'cpu',  // GPU forbidden throughout
-  gpu_layers: 0,      // override SDK default of 99
-  verbosity:  0,      // suppress llama.cpp log noise
+  ctx_size:   1024,
+  device:     'cpu',
+  gpu_layers: 0,
+  verbosity:  0,
 };
-
-// ── Request helpers ──────────────────────────────────────────────────────────
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -65,12 +39,6 @@ function send(res, status, data) {
   res.end(body);
 }
 
-// ── Prompt builder ───────────────────────────────────────────────────────────
-//
-// Behavioral metadata only. No vault addresses, public keys,
-// private keys, or cryptographic data appear in the prompt.
-// ownerAlias is a user-supplied behavioral descriptor — never a blockchain address.
-
 function buildPrompt(ctx) {
   const ratio = ctx.historicalAvgDays > 0
     ? (ctx.silenceDays / ctx.historicalAvgDays).toFixed(2)
@@ -91,19 +59,13 @@ Vault behavioral context:
 - Similar vaults that triggered inheritance: ${ctx.similarTriggeredCount}
 
 Provide a concise risk brief to help the guardian make an informed signing decision.
-Signing a covenant is IRREVERSIBLE once the threshold is met — make the irreversibleWarning clear.
+Signing a covenant is IRREVERSIBLE once the threshold is met.
 
 Respond ONLY with a JSON object, no preamble, no markdown fences:
 {"summary":"2 sentence overview","riskLevel":"HIGH","recommendation":"1 sentence action advice","irreversibleWarning":"clear statement about irreversibility"}
 
 riskLevel: exactly one of "LOW", "MEDIUM", "HIGH", "CRITICAL"`;
 }
-
-// ── Fallback builder ─────────────────────────────────────────────────────────
-//
-// Deterministic fallback when the LLM is unavailable or returns a bad response.
-// Risk level is escalated based on silence ratio so critical situations
-// are never downplayed due to LLM failure.
 
 function buildFallback(ctx) {
   const ratio = ctx.historicalAvgDays > 0
@@ -131,15 +93,11 @@ function buildFallback(ctx) {
   };
 }
 
-// ── Response parser ──────────────────────────────────────────────────────────
-
 function parseResponse(raw, fallback) {
   try {
     const clean  = raw.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
-
     const validLevels = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
-
     if (
       typeof parsed.summary             !== 'string' ||
       typeof parsed.riskLevel           !== 'string' ||
@@ -150,7 +108,6 @@ function parseResponse(raw, fallback) {
       console.warn('[qvac-sidecar] LLM response failed shape validation — using fallback');
       return fallback;
     }
-
     return {
       summary:             parsed.summary,
       riskLevel:           parsed.riskLevel,
@@ -158,18 +115,10 @@ function parseResponse(raw, fallback) {
       irreversibleWarning: parsed.irreversibleWarning,
     };
   } catch (err) {
-    console.warn('[qvac-sidecar] Failed to parse LLM JSON response — using fallback:', err);
+    console.warn('[qvac-sidecar] Failed to parse LLM JSON — using fallback:', err);
     return fallback;
   }
 }
-
-// ── Analyze handler ──────────────────────────────────────────────────────────
-//
-// Manages the full model lifecycle per request:
-//   1. loadModel() → modelId
-//   2. completion() — synchronous call, NOT a Promise
-//   3. await result.text — only .text is awaited
-//   4. unloadModel({ modelId }) in finally — never leave model in RAM
 
 async function handleAnalyze(ctx) {
   const fallback = buildFallback(ctx);
@@ -178,22 +127,21 @@ async function handleAnalyze(ctx) {
   try {
     modelId = await loadModel({
       modelSrc:    LLAMA_3_2_1B_INST_Q4_0,
-      modelType:   'llm',
+      modelType:   'llamacpp-completion',
       modelConfig: LLM_MODEL_CONFIG,
     });
 
     const prompt = buildPrompt(ctx);
 
-    // completion() is a synchronous call — it returns an object immediately.
-    // Only result.text is a Promise. Never await completion() itself.
-    const result = completion({
+    const run   = completion({
       modelId,
       history:          [{ role: 'user', content: prompt }],
       stream:           false,
       generationParams: { temp: 0.15, predict: 300 },
     });
 
-    const raw = await result.text;
+    const final = await run.final;
+    const raw   = final.raw.fullText;
 
     return parseResponse(raw, fallback);
 
@@ -201,18 +149,15 @@ async function handleAnalyze(ctx) {
     console.error('[qvac-sidecar] handleAnalyze error:', err);
     return fallback;
   } finally {
-    // Always unload in finally — never leave model in RAM.
     if (modelId) {
       try {
         await unloadModel({ modelId });
       } catch (unloadErr) {
-        console.error('[qvac-sidecar] unloadModel failed in finally:', unloadErr);
+        console.error('[qvac-sidecar] unloadModel failed:', unloadErr);
       }
     }
   }
 }
-
-// ── HTTP server ──────────────────────────────────────────────────────────────
 
 const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/health') {

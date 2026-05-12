@@ -8,6 +8,7 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "@qvac/llm-llamacpp": "^0.20.0",
     "@qvac/sdk": "latest"
   },
   "engines": {
