@@ -1,12 +1,89 @@
 # Legacy Protocol
 
-A **Solana on-chain inheritance protocol** with complete privacy via **Cloak SDK** integration and AI-powered risk analysis. Set an inactivity threshold, secure your assets in a shielded pool, and ensure your beneficiaries can claim their inheritance—all with zero public trace.
+## What is Legacy Protocol?
+
+**Legacy Protocol is a completely private, on-chain inheritance system for Solana that lets you securely pass your crypto assets to your chosen beneficiary after inactivity, without anyone being able to see how much you have, who your beneficiary is, or what's being transferred.**
+
+### The Core Problem It Solves
+
+On traditional blockchains, inheritance is transparent—dangerously so. If you use a standard vault or smart contract to set up inheritance:
+- **Every wallet that holds your assets is publicly visible** with its full balance displayed on block explorers
+- **Your beneficiary's identity can be discovered** by simply looking at your contract's blockchain records
+- **Anyone watching the chain can calculate exactly how much is being inherited**, how many guardians you have, and when the transfer happens
+- **Adversaries can target you specifically**—if you're known to be wealthy, they know your exact holdings and can time attacks on your guardian setup or beneficiary
+
+This is the **fundamental vulnerability of legacy systems**: they trade transparency (a blockchain virtue) for security (an inheritance vulnerability).
+
+### What Legacy Protocol Achieves
+
+Legacy Protocol **completely eliminates this transparency problem** by integrating **Cloak SDK**—a privacy-focused shielding protocol—to create an inheritance system where:
+
+1. **Your vault balance is completely hidden** — not visible on any blockchain explorer
+2. **Your beneficiary is never publicly identified** — they exist as an encrypted UTXO identity, not a wallet address
+3. **Inheritance transfers leave zero public trace** — only cryptographic proofs (Groth16 zero-knowledge proofs) are recorded on-chain, no amounts or beneficiary addresses
+4. **Guardian coordination is shielded** — guardians can collaborate without revealing their signatures or relationships on the blockchain
+5. **Compliance is possible without exposure** — beneficiaries can prove the transfer was legitimate without revealing the amount
+
+### How It Works at the Highest Level
+
+**Legacy Protocol orchestrates a complete privacy-preserving workflow:**
+
+1. **You (the owner) create a vault** and set a private inactivity threshold (e.g., "if I don't check in for 30 days, trigger inheritance")
+
+2. **You deposit your crypto into a Cloak shielded pool** — the blockchain only sees a cryptographic commitment, not the amount or that it's related to inheritance
+
+3. **You register guardians** (trusted people like family or friends) who will approve the transfer when you've been inactive
+
+4. **Your private vault key is split using Shamir Secret Sharing** — the key is mathematically divided into pieces so that M guardians out of N can reconstruct it, but no single guardian can act alone
+
+5. **The Watcher Service continuously monitors your account** — it tracks whether you've been active and alerts guardians when you're approaching the inactivity threshold
+
+6. **When the inactivity threshold is crossed**, the system triggers inheritance — guardians see a risk assessment from AI analysis (powered by the QVAC service) and can approve the transfer
+
+7. **Guardians execute a shielded transfer** — they collaborate to reconstruct your vault key, then execute a transfer that moves assets into a shielded pool in your beneficiary's name, with **zero transaction details visible on the blockchain**
+
+8. **Your beneficiary claims the inheritance** — they use a private offline key to withdraw the assets to any wallet they want, completely privately
+
+### What This Means in Practice
+
+**Without Legacy Protocol (traditional inheritance):**
+- Block Explorer shows: Owner has 100 SOL → Guardian signs → Beneficiary receives 100 SOL
+- **Everyone can see the entire chain of events**
+- Adversaries know exactly how much wealth is being transferred and when to attack
+
+**With Legacy Protocol:**
+- Block Explorer shows: Vault commitment recorded, shielded transfer executed, no amounts visible
+- **Only the owner, guardians, and beneficiary know any details**
+- Adversaries cannot identify wealthy accounts, target guardians, or time attacks
+
+### What Legacy Protocol Is NOT
+
+- It's not a traditional will or legal contract (though it can work alongside one)
+- It's not a custody service — you remain in complete control of your keys
+- It's not censorship-proof against Solana itself, but it is censorship-resistant against blockchain observers
+- It's not an automated "dead man's switch" — it requires guardians to actively approve transfers after the threshold
+
+### What Legacy Protocol Actually Is
+
+A **cryptographically-secure, privacy-preserving inheritance automation system** that:
+- Uses **Solana blockchain as the coordination layer** (storing commitments, not secrets)
+- Uses **Cloak for complete privacy** (shielded pools, zero-knowledge proofs)
+- Uses **Shamir Secret Sharing for guardian coordination** (M-of-N multisig without on-chain traces)
+- Uses **AI risk analysis** (QVAC service) to help guardians make informed decisions
+- Uses **automated monitoring** (Watcher service) to detect inactivity without exposing it publicly
+- Uses **deterministic key reconstruction** (client-side, never on-chain) to execute transfers
+
+All of this happens while ensuring **no one but your guardians and beneficiary ever knows your inheritance details exist**.
+
+---
+
+A **Solana on-chain inheritance protocol** with complete privacy via **Cloak SDK** integration and AI-powered risk analysis. Set an inactivity threshold, secure your assets in a shielded pool, and [...]
 
 **Live Program IDs (Mainnet)**
 - Legacy Vault: `4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd`
 - Cloak Shielded Pool: `zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW`
 
-> **Security Notice**: This protocol has **not undergone a standard third-party security audit**. While the core Anchor program is stable and tested, we recommend thorough review before deploying assets at scale. Test on devnet first.
+> **Security Notice**: This protocol has **not undergone a standard third-party security audit**. While the core Anchor program is stable and tested, we recommend thorough review before deploying a[...]
 
 ---
 
