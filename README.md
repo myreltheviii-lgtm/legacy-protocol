@@ -1,8 +1,12 @@
 # Legacy Protocol
 
+**[📍 Production Demo: https://legacy-vault-v2.vercel.app](https://legacy-vault-v2.vercel.app)** — This is the production demo website for the Legacy Protocol.
+
+---
+
 ## What is Legacy Protocol?
 
-**Legacy Protocol is a completely private, on-chain inheritance system for Solana that lets you securely pass your crypto assets to your chosen beneficiary after inactivity, without anyone being able to see how much you have, who your beneficiary is, or what's being transferred.**
+**Legacy Protocol is a completely private, on-chain inheritance system for Solana that lets you securely pass your crypto assets to your chosen beneficiary after inactivity, without anyone being ab[...]
 
 ### The Core Problem It Solves
 
@@ -34,13 +38,13 @@ Legacy Protocol **completely eliminates this transparency problem** by integrati
 
 3. **You register guardians** (trusted people like family or friends) who will approve the transfer when you've been inactive
 
-4. **Your private vault key is split using Shamir Secret Sharing** — the key is mathematically divided into pieces so that M guardians out of N can reconstruct it, but no single guardian can act alone
+4. **Your private vault key is split using Shamir Secret Sharing** — the key is mathematically divided into pieces so that M guardians out of N can reconstruct it, but no single guardian can act[...]
 
 5. **The Watcher Service continuously monitors your account** — it tracks whether you've been active and alerts guardians when you're approaching the inactivity threshold
 
 6. **When the inactivity threshold is crossed**, the system triggers inheritance — guardians see a risk assessment from AI analysis (powered by the QVAC service) and can approve the transfer
 
-7. **Guardians execute a shielded transfer** — they collaborate to reconstruct your vault key, then execute a transfer that moves assets into a shielded pool in your beneficiary's name, with **zero transaction details visible on the blockchain**
+7. **Guardians execute a shielded transfer** — they collaborate to reconstruct your vault key, then execute a transfer that moves assets into a shielded pool in your beneficiary's name, with **z[...]
 
 8. **Your beneficiary claims the inheritance** — they use a private offline key to withdraw the assets to any wallet they want, completely privately
 
@@ -77,13 +81,13 @@ All of this happens while ensuring **no one but your guardians and beneficiary e
 
 ---
 
-A **Solana on-chain inheritance protocol** with complete privacy via **Cloak SDK** integration and AI-powered risk analysis. Set an inactivity threshold, secure your assets in a shielded pool, and [...]
+A **Solana on-chain inheritance protocol** with complete privacy via **Cloak SDK** integration and AI-powered risk analysis. Set an inactivity threshold, secure your assets in a shielded pool, and[...]
 
 **Live Program IDs (Mainnet)**
 - Legacy Vault: `4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd`
 - Cloak Shielded Pool: `zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW`
 
-> **Security Notice**: This protocol has **not undergone a standard third-party security audit**. While the core Anchor program is stable and tested, we recommend thorough review before deploying a[...]
+> **Security Notice**: This protocol has **not undergone a standard third-party security audit**. While the core Anchor program is stable and tested, we recommend thorough review before deploying [...]
 
 ---
 
