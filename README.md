@@ -1,8 +1,10 @@
 # Legacy Protocol
 
-A **Solana on-chain inheritance protocol** with complete privacy via [Cloak SDK](https://cloak.dev/) integration and AI-powered risk analysis via [QVAC](https://qvac.sh/). Set an inactivity threshold — if you stop checking in, your designated beneficiary can claim your vault through a multi-guardian approval process with zero public trace.
+A **Solana on-chain inheritance protocol** with complete privacy via [Cloak SDK](https://cloak.dev/) integration and AI-powered risk analysis via [QVAC](https://qvac.sh/). Set an inactivity threshold, distribute guardian shares, and trigger automated inheritance transfers when you go silent.
 
-> **⚠️ Development Status**: This project is in **active development** and not yet production-ready. All releases are in **pre-release/dev mode**. The core Anchor program is stable, but the desktop application (guardian-app), QVAC integration, and some watcher features are still under active development. Expect breaking changes and API updates. Desktop support will be finalized in an upcoming release.
+**[🚀 Live Demo](https://legacy-vault-v2.vercel.app)**
+
+> **⚠️ Development Status**: This project is in **active development** and not yet production-ready. All releases are in **pre-release/dev mode**. The core Anchor program is stable, but the design and services are in active iteration.
 
 **Live Program IDs (Mainnet)**
 - Legacy Vault: `4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd`
@@ -90,9 +92,9 @@ A **Solana on-chain inheritance protocol** with complete privacy via [Cloak SDK]
 ## Quick Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────────────────────┐
 │ Legacy Protocol — Complete Inheritance Workflow                             │
-├─────────────────────────────────────────────────────────────────────────────┤
+├────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │ STEP 1: Vault Owner Creates Vault                                          │
 │   └─ Sets beneficiary UTXO pubkey, threshold, and guardians on-chain       │
@@ -138,7 +140,7 @@ A **Solana on-chain inheritance protocol** with complete privacy via [Cloak SDK]
 │   └─ Withdraws to any real Solana wallet                                  │
 │   └─ Optionally exports compliance proof (JSON, no amounts revealed)      │
 │                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -146,9 +148,9 @@ A **Solana on-chain inheritance protocol** with complete privacy via [Cloak SDK]
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────────────────────┐
 │ Legacy Protocol — Multi-Layer System Architecture              │
-├─────────────────────────────────────────────────────────────────┤
+├────────────────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  programs/legacy_vault/    — Anchor program (Rust)             │
 │  sdk/                      — TypeScript SDK                    │
@@ -163,7 +165,7 @@ A **Solana on-chain inheritance protocol** with complete privacy via [Cloak SDK]
 │  tests/                    — Comprehensive test suite          │
 │  docs/                     — Architecture & deployment guides  │
 │                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Language Composition:**
@@ -179,7 +181,7 @@ A **Solana on-chain inheritance protocol** with complete privacy via [Cloak SDK]
 
 ### 1. Cloak Integration — Private Inheritance
 
-Legacy Protocol embeds Cloak SDK to eliminate every public trace from the inheritance lifecycle. Without Cloak, vault balance, beneficiary wallet, and inheritance transfers are visible on-chain. With Cloak, they are completely hidden.
+Legacy Protocol embeds Cloak SDK to eliminate every public trace from the inheritance lifecycle. Without Cloak, vault balance, beneficiary wallet, and inheritance transfers are visible on-chain. Cloak's zero-knowledge proofs and shielded pool make the entire transfer happen "invisibly" on-chain.
 
 #### Comparison: Without vs. With Cloak
 
@@ -296,7 +298,7 @@ const proof = await generateComplianceProof({
 
 ### 2. Watcher Service — Inactivity Monitoring
 
-The watcher is the **off-chain monitoring service** that observes all vault states on-chain, computes inactivity scores, and drives the progressive alert pipeline. Without the watcher, no automatic notifications fire — but vaults can still be triggered manually by anyone.
+The watcher is the **off-chain monitoring service** that observes all vault states on-chain, computes inactivity scores, and drives the progressive alert pipeline. Without the watcher, no automatic trigger would happen.
 
 **Status**: 🟡 Dev — Real-time monitoring works, alert delivery integrations pending
 
@@ -439,7 +441,7 @@ watcher_zone_distribution{zone="red"} 14
 
 ### 3. QVAC Service — AI Risk Analysis
 
-**QVAC** (Quantum-Safe Vector Analysis Center) is an AI risk analysis engine that generates human-readable risk briefs for guardians. It integrates **LLMs** and **vector embeddings** to analyze vault behavior and flag unusual patterns.
+**QVAC** (Quantum-Safe Vector Analysis Center) is an AI risk analysis engine that generates human-readable risk briefs for guardians. It integrates **LLMs** and **vector embeddings** to analyze vault behavior and recommend guardian decisions.
 
 **Status**: 🟡 Dev — LLM inference works, RAG store being optimized
 
@@ -998,275 +1000,143 @@ The watcher monitors owner activity via:
 ### Prerequisites
 
 - **Node.js**: 22.17.0 or later (for QVAC & watcher)
-- **Rust**: 1.77.2 or later
-- **Anchor**: 0.31.1 (`anchor --version`)
-- **Solana CLI**: latest (`solana --version`)
+- **Rust**: 1.75.0 or later (for Anchor program)
+- **Solana CLI**: 1.18.0 or later (deployment)
+- **Tauri CLI**: 2.x (desktop app build)
 
-### Installation
+### Setup
 
 ```bash
-# Clone the repository
+# Clone repository
 git clone https://github.com/myreltheviii-lgtm/legacy-protocol.git
 cd legacy-protocol
 
-# Install root dependencies
+# Install Node dependencies
 npm install
 
 # Build Anchor program
-anchor build
+cd programs/legacy_vault
+cargo build-sbf
 
-# Build SDKs
-cd sdk && npm run build && cd ..
-cd cloak-integration && npm run build && cd ..
-cd app && npm run build && cd ..
-```
-
-### Quick Start: TypeScript SDK
-
-```typescript
-import { Connection, clusterApiUrl } from "@solana/web3.js";
-import {
-  buildInitializeVaultIx,
-  deriveVaultPDA,
-} from "@legacy-protocol/sdk";
-import { generateUtxoKeypair } from "@legacy-protocol/cloak-integration";
-
-const connection = new Connection(clusterApiUrl("mainnet-beta"));
-
-// 1. Generate beneficiary identity (keep private key offline)
-const beneficiary = await generateUtxoKeypair();
-
-// 2. Create vault
-const vaultIndex = 0n;
-const inactivityThresholdSlots = 5_000_000n;
-const [vaultPda] = deriveVaultPDA(owner.publicKey, vaultIndex);
-
-const ix = buildInitializeVaultIx({
-  owner: owner.publicKey,
-  vaultPda,
-  beneficiaryUtxoPubkey: beneficiary.publicKey,
-  vaultIndex,
-  inactivityThresholdSlots,
-  programId: LEGACY_VAULT_PROGRAM_ID,
-});
-
-// 3. Submit transaction
-const tx = new Transaction().add(ix);
-const sig = await connection.sendTransaction(tx, [owner]);
-await connection.confirmTransaction(sig);
+# Set up .env files (see Configuration section)
+cp .env.example .env
 ```
 
 ---
 
 ## Development
 
-### Build Commands
+### File Structure
+
+```
+legacy-protocol/
+├── programs/legacy_vault/          — Anchor program
+│   ├── src/lib.rs
+│   ├── src/instructions/
+│   └── src/state.rs
+├── sdk/                             — TypeScript SDK
+│   ├── src/
+│   └── package.json
+├── cloak-integration/               — Cloak wrapper
+├── watcher/                         — Monitoring service
+├── relayer/                         — Transaction broadcaster
+├── qvac-sidecar/                    — LLM service
+├── app/                             — Owner dashboard
+├── guardian-app/                    — Tauri desktop app
+├── crates/shamir/                   — Shamir GF(256) impl
+├── tests/                           — Integration tests
+└── docs/                            — Guides
+```
+
+---
+
+## Testing
+
+### Unit Tests
 
 ```bash
-# Anchor program (Rust)
-anchor build
-anchor test
+# Test Anchor program
+cd programs/legacy_vault
+cargo test
 
-# TypeScript SDK
-cd sdk && npm run build && npm run dev
-
-# Cloak integration layer
-cd cloak-integration && npm run build && npm run dev
-
-# Watcher service
-cd watcher && npm run build && npm run start
-
-# Relayer service
-cd relayer && npm run build && npm run start
-
-# QVAC sidecar
-cd qvac-sidecar && npm run start
-
-# Frontend (Next.js + Tauri)
-cd app && npm run dev
-
-# All tests
+# Test SDK
+cd ../../sdk
 npm run test
 ```
 
-### Testing
+### Integration Tests
 
 ```bash
-# All tests
-npm run test
+# Start local Solana validator
+solana-test-validator
 
-# Individual suites
-npm run test:anchor
-npm run test:sdk
-npm run test:shamir
-npm run test:watcher
-npm run test:relayer
-npm run test:cloak
+# Run integration suite
 npm run test:integration
+```
+
+### E2E Tests (Devnet)
+
+```bash
+CLUSTER=devnet npm run test:e2e
 ```
 
 ---
 
 ## Deployment
 
-### Build for Production
+### Mainnet
 
-```bash
-# Anchor program (fat LTO)
-anchor build --release
+1. **Build program**
+   ```bash
+   cd programs/legacy_vault
+   cargo build-sbf --release
+   ```
 
-# TypeScript bundles
-npm run build
+2. **Deploy to Mainnet**
+   ```bash
+   solana program deploy --program-id legacy_program_keypair.json target/sbf-solana-solana/release/legacy_vault.so
+   ```
 
-# Watcher
-cd watcher && npm run build
-cd relayer && npm run build
+3. **Start watcher & relayer** (production)
+   ```bash
+   CLUSTER=mainnet-beta npm run start:watcher
+   CLUSTER=mainnet-beta npm run start:relayer
+   ```
 
-# Frontend (Next.js static export)
-cd app && npm run build
-```
+---
 
-### Program Deployment
+## Known Limitations
 
-```bash
-solana config set --url mainnet-beta
-anchor deploy
-```
-
-### Watcher Deployment
-
-```bash
-cd watcher
-npm install
-node dist/index.js
-```
-
-### Relayer Deployment
-
-```bash
-cd relayer
-npm install
-node dist/index.js
-```
-
-### QVAC Sidecar Deployment
-
-```bash
-cd qvac-sidecar
-npm install
-npm run start
-```
-
-### Guardian App (Desktop)
-
-> ⚠️ **Desktop application is not yet ready for production**. The Tauri build is still being finalized. For now, you can build from source for local testing:
-
-```bash
-cd guardian-app
-
-# Install dependencies
-npm install
-
-# For development (hot reload)
-npm run dev
-
-# To build a local binary (may require platform-specific setup)
-npm run tauri build
-```
-
-The resulting binary will be in `src-tauri/target/release/`. Platform-specific binaries (.dmg, .msi, .deb) will be released once testing is complete.
+See [Known Limitations](#known-limitations) section above.
 
 ---
 
 ## Roadmap
 
-### Phase 1: Core Protocol ✅ (Current)
-- [x] Anchor program (stable)
-- [x] TypeScript SDK
-- [x] Shamir secret sharing
-- [x] Watcher service (basic)
-- [x] Relayer service (basic)
-- [ ] **Finalize Cloak integration tests** (in progress)
-
-### Phase 2: Desktop & QVAC 🟡 (In Progress)
-- [ ] Guardian app Tauri build (binary release Q2 2026)
-- [ ] QVAC RAG store optimization
-- [ ] Desktop installer (macOS, Windows, Linux)
-- [ ] Model predownloading & caching
-
-### Phase 3: Production Hardening 🟡 (Upcoming)
-- [ ] Comprehensive security audit
-- [ ] Escalation webhook integrations (PagerDuty, Slack)
-- [ ] Job persistence in relayer
-- [ ] Monitoring dashboard (Grafana)
-- [ ] Operational runbooks
-
-### Phase 4: Mainnet Launch 🔴 (Future)
-- [ ] All phases complete
-- [ ] Mainnet deployment
-- [ ] Official binary releases
-- [ ] Production support
+- [ ] Guardian App: Full desktop binary release
+- [ ] Relayer: PagerDuty/Slack escalation webhooks
+- [ ] Watcher: SMS/Email alert delivery (Twilio, SendGrid)
+- [ ] QVAC: RAG store performance optimization
+- [ ] Protocol: Emergency pause mechanism (multisig vote)
+- [ ] Documentation: Deployment playbooks for operators
 
 ---
 
 ## Security
 
-### Panic-Freedom Invariant
+### Threat Model
 
-Every instruction handler in the Anchor program is statically panic-free:
-- All fallible operations use **checked arithmetic**
-- No `unwrap()`, `expect()`, or `panic!()` calls
-- All errors propagate via `LegacyError` enum
+- **Owner Key Compromise**: Only Shamir shares at risk, not full inheritance
+- **Guardian Collusion**: M-of-N prevents single-guardian theft
+- **Watcher Failure**: Manual trigger via CLI fallback
+- **Cloak Pool Compromise**: Only privacy at risk, not funds (due to Groth16 proofs)
 
-### Key Zeroing
+### Code Review
 
-All sensitive cryptographic material is zeroed immediately after use:
-```typescript
-ownerUtxoPrivateKey.fill(0);
-reconstructedKeypair.privateKey.fill(0);
-beneficiaryUtxoPrivateKey.fill(0);
-```
-
-### Privacy Guarantees
-
-**On-Chain Visibility:**
-- ✓ Vault exists, owner wallet, guardian identities
-- ✗ Beneficiary wallet, vault balance, transfer amounts, guardian shares
-
----
-
-## Documentation
-
-- **Watcher Architecture**: [docs/WATCHER.md](docs/WATCHER.md)
-- **Relayer Architecture**: [docs/RELAYER.md](docs/RELAYER.md)
-- **Cloak Integration**: [docs/CLOAK_INTEGRATION.md](docs/CLOAK_INTEGRATION.md)
-- **Protocol Specification**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+This codebase has undergone **preliminary security review** but is **not yet audited for production use**. Use at your own risk.
 
 ---
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
-
----
-
-## Support & Contributions
-
-For issues, feature requests, or contributions:
-
-1. **Issues**: [GitHub Issues](https://github.com/myreltheviii-lgtm/legacy-protocol/issues)
-2. **Discussions**: [GitHub Discussions](https://github.com/myreltheviii-lgtm/legacy-protocol/discussions)
-3. **Pull Requests**: Submit PRs against `main` branch with comprehensive tests
-
----
-
-## Acknowledgments
-
-Built with:
-- [Anchor](https://github.com/coral-xyz/anchor) — Solana program framework
-- [Cloak SDK](https://cloak.dev/) — Zero-knowledge shielded transactions
-- [QVAC SDK](https://qvac.sh/) — AI inference on edge infrastructure
-- [Yellowstone Geyser](https://www.triton-one.com/) — Real-time RPC streaming
-- [Solana Web3.js](https://github.com/solana-labs/solana-web3.js) — JavaScript client
-- [Next.js](https://nextjs.org/) — React framework
-- [Tauri](https://tauri.app/) — Desktop app framework
+MIT
