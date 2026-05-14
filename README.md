@@ -1,6 +1,6 @@
 # Legacy Protocol
 
-**[🎥 Demo Video: https://youtube.com/shorts/J4YBg4WYuRw](https://youtube.com/shorts/J4YBg4WYuRw)**
+**[🎥 Demo Video (QVAC Integration — AI Risk Analysis): https://youtube.com/shorts/J4YBg4WYuRw](https://youtube.com/shorts/J4YBg4WYuRw)**
 
 **[📍 Production Demo: https://legacy-vault-v2.vercel.app](https://legacy-vault-v2.vercel.app)** — This is the production demo website for the Legacy Protocol.
 
