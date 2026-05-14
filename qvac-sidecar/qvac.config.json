@@ -1,0 +1,4 @@
+{
+  "cacheDir": "/workspaces/legacy-protocol/.qvac/models",
+  "workerEntry": "/workspaces/legacy-protocol/qvac-sidecar/node_modules/@qvac/sdk/dist/server/worker.js"
+}

@@ -4,7 +4,7 @@ node /workspaces/legacy-protocol/signing-service/index.js &
 SIGNING_PID=$!
 
 echo "Starting qvac-sidecar..."
-node /workspaces/legacy-protocol/qvac-sidecar/index.js &
+QVAC_WORKER_PATH=/workspaces/legacy-protocol/qvac-sidecar/node_modules/@qvac/sdk/dist/server/worker.js node /workspaces/legacy-protocol/qvac-sidecar/index.js &
 QVAC_PID=$!
 
 echo "Starting watcher..."
