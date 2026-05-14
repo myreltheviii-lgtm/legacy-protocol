@@ -1,10 +1,11 @@
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 // guardian-app/src/lib/cloak-bridge.ts
 //
 // Typed bridge to the signing-service Bare worklet.
 // Zero Cloak imports. Zero ZK imports. Metro never sees them.
 // All calls are fetch() to 127.0.0.1:7647.
 
-const BASE = "/api/signing";
+const BASE = "http://127.0.0.1:7647";
 
 // ─── Types (mirror of @legacy-protocol public surface) ────────────────────────
 
@@ -39,7 +40,7 @@ function deserialize<T>(str: string): T {
 // ─── Core fetch wrapper ───────────────────────────────────────────────────────
 
 async function post<T>(endpoint: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${endpoint}`, {
+  const res = await tauriFetch(`${BASE}${endpoint}`, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    serialize(body),
@@ -99,6 +100,6 @@ export async function testReconstruction(params: {
  * Health-check. Resolves if the worklet HTTP server is up.
  */
 export async function pingWorklet(): Promise<void> {
-  const res = await fetch(`${BASE}/health`);
+  const res = await tauriFetch(`${BASE}/health`);
   if (!res.ok) throw new Error("Signing service health check failed");
 }

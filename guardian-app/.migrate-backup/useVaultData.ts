@@ -41,7 +41,7 @@ export interface VaultSummary {
 // VITE_WATCHER_URL must be set in .env before building.
 // Vite bakes VITE_* vars at build time via import.meta.env.
 // No fallback is accepted — a missing var surfaces an actionable UI error.
-const WATCHER_URL         = process.env.NEXT_PUBLIC_WATCHER_URL ?? '';
+const WATCHER_URL         = import.meta.env.VITE_WATCHER_URL as string ?? '';
 const SLOTS_PER_DAY       = 172_800;
 const REFRESH_INTERVAL_MS = 30_000;
 

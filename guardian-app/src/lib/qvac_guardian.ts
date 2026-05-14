@@ -8,7 +8,7 @@
 // No Cloak private keys, viewing keys, UTXO commitments, or cryptographic
 // material ever enter this module or the QVAC LLM prompt.
 
-const QVAC_BASE = 'http://127.0.0.1:7648';
+const QVAC_BASE = "/api/qvac";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

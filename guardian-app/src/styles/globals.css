@@ -1,0 +1,3 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1512; }
+@keyframes spin { to { transform: rotate(360deg); } }

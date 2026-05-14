@@ -10,7 +10,7 @@
 
 import { Connection } from '@solana/web3.js';
 
-const _rpcEndpoint = process.env.NEXT_PUBLIC_SOLANA_RPC_ENDPOINT as string | undefined;
+const _rpcEndpoint = import.meta.env.VITE_SOLANA_RPC_ENDPOINT as string | undefined;
 
 if (!_rpcEndpoint) {
   throw new Error(
