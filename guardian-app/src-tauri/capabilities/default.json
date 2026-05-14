@@ -9,14 +9,15 @@
     "shell:allow-spawn",
     "shell:allow-execute",
     "http:default",
+    "http:allow-fetch",
     {
-      "identifier": "http:allow-fetch",
+      "identifier": "http:default",
       "allow": [
         {
-          "url": "http://127.0.0.1:7647/**"
+          "url": "http://127.0.0.1:*/*"
         },
         {
-          "url": "http://127.0.0.1:7648/**"
+          "url": "http://localhost:*/*"
         }
       ]
     }

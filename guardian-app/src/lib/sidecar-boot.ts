@@ -1,4 +1,4 @@
-import { fetch } from '@tauri-apps/plugin-http';
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 // guardian-app/src/lib/sidecar-boot.ts
 //
 // Health-check utilities for the signing-service and QVAC sidecars.
@@ -26,7 +26,7 @@ function sleep(ms: number): Promise<void> {
 async function pollUntilReady(url: string, label: string): Promise<void> {
   for (let i = 0; i < MAX_ATTEMPTS; i++) {
     try {
-      const res = await fetch(url);
+      const res = await tauriFetch(url);
       if (res.ok) {
         console.log(`[sidecar-boot] ${label} ready.`);
         return;
