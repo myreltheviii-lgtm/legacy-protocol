@@ -85,9 +85,9 @@ All of this happens while ensuring **no one but your guardians and beneficiary e
 
 A **Solana on-chain inheritance protocol** with complete privacy via **Cloak SDK** integration and AI-powered risk analysis. Set an inactivity threshold, secure your assets in a shielded pool, and[...]
 
-**Live Program IDs (Mainnet)**
-- Legacy Vault: `4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd`
-- Cloak Shielded Pool: `zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW`
+**Live Program IDs**
+- Legacy Vault (Devnet): `4xQxjp8gZJm4ztGfegBXCxkYZKCRLbeMz2Pr3wvtkgSd`
+- Cloak Shielded Pool (Mainnet): `zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW`
 
 > **Security Notice**: This protocol has **not undergone a standard third-party security audit**. While the core Anchor program is stable and tested, we recommend thorough review before deploying [...]
 
